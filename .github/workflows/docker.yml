@@ -4,10 +4,13 @@ on:
   push:
     branches: [ main ]
     tags: [ 'v*' ]
+  workflow_dispatch:
+  # Temporarily disabled - requires DOCKER_USERNAME and DOCKER_PASSWORD secrets
 
 jobs:
   build:
     runs-on: ubuntu-latest
+    if: false  # Disabled until Docker credentials are configured
     
     steps:
     - name: Checkout code
