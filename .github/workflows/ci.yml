@@ -21,16 +21,11 @@ jobs:
         distribution: 'temurin'
         cache: maven
     
-    - name: Make mvnw executable
-      run: chmod +x mvnw
-    
     - name: Run tests
-      run: ./mvnw test
+      run: mvn test
     
     - name: Build project
-      run: |
-        chmod +x mvnw
-        ./mvnw clean package -DskipTests
+      run: mvn clean package -DskipTests
     
     - name: Upload test results
       if: always()
