@@ -84,6 +84,17 @@ src/test/java/org/example/lastro/
 - Matching é atômico por par de ordens
 - Sem inconsistências nas posições sob concorrência
 
+#### Baseline de Concorrência
+
+Para detalhes completos sobre os testes de concorrência, resultados e métricas, consulte o documento [BASELINE_CONCURRENCY.md](./BASELINE_CONCURRENCY.md).
+
+**Resultados do Baseline**:
+- 11/11 testes de concorrência passando (100%)
+- 1,460 operações processadas sem erros
+- Throughput: ~77 ordens/segundo
+- Latência média: <10ms por operação
+- Zero deadlocks detectados
+
 ## Como Executar
 
 ### Pré-requisitos
@@ -161,8 +172,8 @@ curl http://localhost:8080/api/loadtest/metrics
 - [x] Implementar domínio com locks
 - [x] Criar load generator separado
 - [x] Implementar coleta de métricas
-- [ ] Executar baseline de concorrência
-- [ ] Validar corretude sob concorrência
+- [x] Executar baseline de concorrência
+- [x] Validar corretude sob concorrência
 
 ### Fase 2: Escala
 - [ ] Identificar limite de escala
