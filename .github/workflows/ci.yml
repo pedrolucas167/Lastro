@@ -28,7 +28,9 @@ jobs:
       run: ./mvnw test
     
     - name: Build project
-      run: ./mvnw clean package -DskipTests
+      run: |
+        chmod +x mvnw
+        ./mvnw clean package -DskipTests
     
     - name: Upload test results
       if: always()
