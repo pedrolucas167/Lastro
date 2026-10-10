@@ -186,10 +186,10 @@ curl http://localhost:8080/api/loadtest/metrics
 - [x] Validar corretude sob concorrência
 
 ### Fase 2: Escala
-- [ ] Identificar limite de escala
-- [ ] Testar diferentes níveis de concorrência
-- [ ] Testar com diferentes números de contas
-- [ ] Documentar pontos de gargalo
+- [x] Identificar limite de escala
+- [x] Testar diferentes níveis de concorrência
+- [x] Testar com diferentes números de contas
+- [x] Documentar pontos de gargalo
 
 ### Fase 3: Otimização (se necessário)
 - [ ] Avaliar necessidade de cache
