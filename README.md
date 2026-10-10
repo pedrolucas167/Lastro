@@ -95,6 +95,16 @@ Para detalhes completos sobre os testes de concorrência, resultados e métricas
 - Latência média: <10ms por operação
 - Zero deadlocks detectados
 
+#### Análise de Escala
+
+Para detalhes completos sobre testes de escala, limites identificados e gargalos, consulte o documento [SCALE_ANALYSIS.md](./SCALE_ANALYSIS.md).
+
+**Resultados da Análise de Escala**:
+- Escala sustentável: até 100 threads com throughput > 2000 ordens/seg
+- Gargalo primário: contenção de locks no matching engine acima de 200 threads
+- Gargalo secundário: gerenciamento de posições com 1000+ contas
+- Throughput máximo observado: 10,000 ordens/seg (50 threads)
+
 ## Como Executar
 
 ### Pré-requisitos
@@ -176,10 +186,10 @@ curl http://localhost:8080/api/loadtest/metrics
 - [x] Validar corretude sob concorrência
 
 ### Fase 2: Escala
-- [ ] Identificar limite de escala
-- [ ] Testar diferentes níveis de concorrência
-- [ ] Testar com diferentes números de contas
-- [ ] Documentar pontos de gargalo
+- [x] Identificar limite de escala
+- [x] Testar diferentes níveis de concorrência
+- [x] Testar com diferentes números de contas
+- [x] Documentar pontos de gargalo
 
 ### Fase 3: Otimização (se necessário)
 - [ ] Avaliar necessidade de cache
