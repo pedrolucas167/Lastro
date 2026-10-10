@@ -1,0 +1,53 @@
+package org.example.lastro.domain;
+
+import java.math.BigDecimal;
+import java.time.Instant;
+
+public class Trade {
+    private final String id;
+    private final String symbol;
+    private final String buyOrderId;
+    private final String sellOrderId;
+    private final BigDecimal price;
+    private final int quantity;
+    private final Instant timestamp;
+
+    public Trade(String id, String symbol, String buyOrderId, String sellOrderId, 
+                 BigDecimal price, int quantity) {
+        this.id = id;
+        this.symbol = symbol;
+        this.buyOrderId = buyOrderId;
+        this.sellOrderId = sellOrderId;
+        this.price = price;
+        this.quantity = quantity;
+        this.timestamp = Instant.now();
+    }
+
+    public String getId() {
+        return id;
+    }
+
+    public String getSymbol() {
+        return symbol;
+    }
+
+    public String getBuyOrderId() {
+        return buyOrderId;
+    }
+
+    public String getSellOrderId() {
+        return sellOrderId;
+    }
+
+    public BigDecimal getPrice() {
+        return price;
+    }
+
+    public int getQuantity() {
+        return quantity;
+    }
+
+    public Instant getTimestamp() {
+        return timestamp;
+    }
+}
