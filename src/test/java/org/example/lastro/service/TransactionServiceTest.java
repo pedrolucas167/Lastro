@@ -4,7 +4,7 @@ import org.example.lastro.domain.Account;
 import org.example.lastro.domain.Transaction;
 import org.example.lastro.domain.TransactionStatus;
 import org.example.lastro.domain.TransactionType;
-import org.example.lastro.service.IdempotencyService;
+import org.example.lastro.exception.TransactionFailedException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.DisplayName;
@@ -51,25 +51,27 @@ class TransactionServiceTest {
     @Test
     @DisplayName("Deve falhar transferência quando conta origem não existe")
     void shouldFailTransferWhenFromAccountDoesNotExist() {
-        Transaction transaction = transactionService.transfer(
-            "non-existent",
-            toAccount.getId(),
-            new BigDecimal("100.00")
+        assertThrows(
+            TransactionFailedException.class,
+            () -> transactionService.transfer(
+                "non-existent",
+                toAccount.getId(),
+                new BigDecimal("100.00")
+            )
         );
-        
-        assertEquals(TransactionStatus.FAILED, transaction.getStatus());
     }
 
     @Test
     @DisplayName("Deve falhar transferência quando conta destino não existe")
     void shouldFailTransferWhenToAccountDoesNotExist() {
-        Transaction transaction = transactionService.transfer(
-            fromAccount.getId(),
-            "non-existent",
-            new BigDecimal("100.00")
+        assertThrows(
+            TransactionFailedException.class,
+            () -> transactionService.transfer(
+                fromAccount.getId(),
+                "non-existent",
+                new BigDecimal("100.00")
+            )
         );
-        
-        assertEquals(TransactionStatus.FAILED, transaction.getStatus());
     }
 
     @Test

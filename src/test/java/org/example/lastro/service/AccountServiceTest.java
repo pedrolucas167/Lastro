@@ -1,6 +1,8 @@
 package org.example.lastro.service;
 
 import org.example.lastro.domain.Account;
+import org.example.lastro.exception.AccountNotFoundException;
+import org.example.lastro.exception.InsufficientFundsException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.DisplayName;
@@ -39,10 +41,12 @@ class AccountServiceTest {
     }
 
     @Test
-    @DisplayName("Deve retornar null ao buscar conta inexistente")
-    void shouldReturnNullForNonExistentAccount() {
-        Account account = accountService.getAccount("non-existent");
-        assertNull(account);
+    @DisplayName("Deve lançar exceção ao buscar conta inexistente")
+    void shouldThrowExceptionWhenGettingNonExistentAccount() {
+        assertThrows(
+            AccountNotFoundException.class,
+            () -> accountService.getAccount("non-existent")
+        );
     }
 
     @Test
@@ -57,11 +61,10 @@ class AccountServiceTest {
     @Test
     @DisplayName("Deve lançar exceção ao creditar conta inexistente")
     void shouldThrowExceptionWhenCreditingNonExistentAccount() {
-        IllegalArgumentException exception = assertThrows(
-            IllegalArgumentException.class,
+        assertThrows(
+            AccountNotFoundException.class,
             () -> accountService.credit("non-existent", new BigDecimal("100.00"))
         );
-        assertEquals("Account not found", exception.getMessage());
     }
 
     @Test
@@ -76,11 +79,10 @@ class AccountServiceTest {
     @Test
     @DisplayName("Deve lançar exceção ao debitar conta inexistente")
     void shouldThrowExceptionWhenDebitingNonExistentAccount() {
-        IllegalArgumentException exception = assertThrows(
-            IllegalArgumentException.class,
+        assertThrows(
+            AccountNotFoundException.class,
             () -> accountService.debit("non-existent", new BigDecimal("100.00"))
         );
-        assertEquals("Account not found", exception.getMessage());
     }
 
     @Test
@@ -88,10 +90,9 @@ class AccountServiceTest {
     void shouldThrowExceptionWhenDebitingWithInsufficientBalance() {
         Account account = accountService.createAccount(new BigDecimal("100.00"));
         
-        IllegalArgumentException exception = assertThrows(
-            IllegalArgumentException.class,
+        assertThrows(
+            InsufficientFundsException.class,
             () -> accountService.debit(account.getId(), new BigDecimal("200.00"))
         );
-        assertEquals("Insufficient funds", exception.getMessage());
     }
 }

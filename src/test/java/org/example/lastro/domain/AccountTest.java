@@ -74,14 +74,14 @@ class AccountTest {
     @DisplayName("Deve permitir debitar exatamente o saldo disponível")
     void shouldAllowDebitingExactBalance() {
         account.debit(new BigDecimal("1000.00"));
-        assertEquals(BigDecimal.ZERO, account.getBalance());
+        assertEquals(0, account.getBalance().compareTo(BigDecimal.ZERO));
     }
 
     @Test
     @DisplayName("Deve lançar exceção para valores negativos no crédito")
     void shouldThrowExceptionForNegativeCredit() {
         assertThrows(
-            ArithmeticException.class,
+            IllegalArgumentException.class,
             () -> account.credit(new BigDecimal("-100.00"))
         );
     }
@@ -90,7 +90,7 @@ class AccountTest {
     @DisplayName("Deve lançar exceção para valores negativos no débito")
     void shouldThrowExceptionForNegativeDebit() {
         assertThrows(
-            ArithmeticException.class,
+            IllegalArgumentException.class,
             () -> account.debit(new BigDecimal("-100.00"))
         );
     }

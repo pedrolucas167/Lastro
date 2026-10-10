@@ -28,6 +28,9 @@ public class Account {
     }
 
     public void credit(BigDecimal amount) {
+        if (amount.compareTo(BigDecimal.ZERO) < 0) {
+            throw new IllegalArgumentException("Amount cannot be negative");
+        }
         lock.lock();
         try {
             this.balance = this.balance.add(amount);
@@ -37,6 +40,9 @@ public class Account {
     }
 
     public void debit(BigDecimal amount) {
+        if (amount.compareTo(BigDecimal.ZERO) < 0) {
+            throw new IllegalArgumentException("Amount cannot be negative");
+        }
         lock.lock();
         try {
             if (this.balance.compareTo(amount) < 0) {
