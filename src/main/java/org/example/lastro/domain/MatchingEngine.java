@@ -8,6 +8,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
 
@@ -16,13 +17,12 @@ public class MatchingEngine {
 
     private final ConcurrentHashMap<String, OrderBook> orderBooks;
     private final ConcurrentHashMap<String, Lock> symbolLocks;
-    private final List<Trade> trades;
-    private final Lock tradesLock = new ReentrantLock();
+    private final ConcurrentLinkedQueue<Trade> trades;
 
     public MatchingEngine() {
         this.orderBooks = new ConcurrentHashMap<>();
         this.symbolLocks = new ConcurrentHashMap<>();
-        this.trades = new ArrayList<>();
+        this.trades = new ConcurrentLinkedQueue<>();
     }
 
     public OrderBook getOrderBook(String symbol) {
@@ -55,12 +55,7 @@ public class MatchingEngine {
             }
 
             if (!generatedTrades.isEmpty()) {
-                tradesLock.lock();
-                try {
-                    trades.addAll(generatedTrades);
-                } finally {
-                    tradesLock.unlock();
-                }
+                trades.addAll(generatedTrades);
             }
             return generatedTrades;
         } finally {
@@ -167,33 +162,18 @@ public class MatchingEngine {
     }
 
     public List<Trade> getTrades() {
-        tradesLock.lock();
-        try {
-            return new ArrayList<>(trades);
-        } finally {
-            tradesLock.unlock();
-        }
+        return new ArrayList<>(trades);
     }
 
     public List<Trade> getTradesForSymbol(String symbol) {
-        tradesLock.lock();
-        try {
-            return trades.stream()
-                .filter(t -> t.getSymbol().equals(symbol))
-                .toList();
-        } finally {
-            tradesLock.unlock();
-        }
+        return trades.stream()
+            .filter(t -> t.getSymbol().equals(symbol))
+            .toList();
     }
 
     public void clear() {
         orderBooks.clear();
         symbolLocks.clear();
-        tradesLock.lock();
-        try {
-            trades.clear();
-        } finally {
-            tradesLock.unlock();
-        }
+        trades.clear();
     }
 }
