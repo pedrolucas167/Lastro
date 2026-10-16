@@ -5,6 +5,7 @@ import org.example.lastro.domain.OrderType;
 import org.example.lastro.exception.RegulatoryException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
@@ -19,9 +20,23 @@ public class RegulatoryValidationService {
     private static final BigDecimal MIN_PRICE = new BigDecimal("0.01");
     private static final int MIN_QUANTITY = 1;
     private static final int MAX_QUANTITY = 1000000;
-    private static final LocalTime MARKET_OPEN = LocalTime.of(10, 0);
-    private static final LocalTime MARKET_CLOSE = LocalTime.of(18, 0);
     private static final BigDecimal MAX_ORDER_VALUE = new BigDecimal("100000000");
+
+    private final boolean marketEnabled;
+    private final boolean weekendTradingEnabled;
+    private final LocalTime marketOpen;
+    private final LocalTime marketClose;
+
+    public RegulatoryValidationService(
+            @Value("${lastro.market.enabled:true}") boolean marketEnabled,
+            @Value("${lastro.market.weekend-trading-enabled:false}") boolean weekendTradingEnabled,
+            @Value("${lastro.market.open:10:00}") String marketOpen,
+            @Value("${lastro.market.close:18:00}") String marketClose) {
+        this.marketEnabled = marketEnabled;
+        this.weekendTradingEnabled = weekendTradingEnabled;
+        this.marketOpen = LocalTime.parse(marketOpen);
+        this.marketClose = LocalTime.parse(marketClose);
+    }
 
     public void validateOrder(String symbol, OrderSide side, OrderType type, 
                              BigDecimal price, int quantity, String accountId) {
@@ -36,18 +51,23 @@ public class RegulatoryValidationService {
     }
 
     private void validateMarketHours() {
+        if (!marketEnabled) {
+            return;
+        }
+
         LocalTime now = LocalTime.now();
         DayOfWeek dayOfWeek = java.time.DayOfWeek.from(java.time.LocalDate.now());
         
-        if (dayOfWeek == DayOfWeek.SATURDAY || dayOfWeek == DayOfWeek.SUNDAY) {
+        if (!weekendTradingEnabled &&
+            (dayOfWeek == DayOfWeek.SATURDAY || dayOfWeek == DayOfWeek.SUNDAY)) {
             throw new RegulatoryException("Market is closed on weekends");
         }
         
-        if (now.isBefore(MARKET_OPEN) || now.isAfter(MARKET_CLOSE)) {
+        if (now.isBefore(marketOpen) || now.isAfter(marketClose)) {
             throw new RegulatoryException(
                 String.format("Market is closed. Trading hours: %s - %s", 
-                    MARKET_OPEN.truncatedTo(ChronoUnit.MINUTES), 
-                    MARKET_CLOSE.truncatedTo(ChronoUnit.MINUTES))
+                    marketOpen.truncatedTo(ChronoUnit.MINUTES), 
+                    marketClose.truncatedTo(ChronoUnit.MINUTES))
             );
         }
     }
