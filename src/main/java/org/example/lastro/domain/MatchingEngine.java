@@ -13,13 +13,15 @@ import java.util.concurrent.locks.ReentrantLock;
 
 public class MatchingEngine {
     private static final Logger logger = LoggerFactory.getLogger(MatchingEngine.class);
-    
+
     private final ConcurrentHashMap<String, OrderBook> orderBooks;
+    private final ConcurrentHashMap<String, Lock> symbolLocks;
     private final List<Trade> trades;
-    private final Lock lock = new ReentrantLock();
+    private final Lock tradesLock = new ReentrantLock();
 
     public MatchingEngine() {
         this.orderBooks = new ConcurrentHashMap<>();
+        this.symbolLocks = new ConcurrentHashMap<>();
         this.trades = new ArrayList<>();
     }
 
@@ -27,7 +29,12 @@ public class MatchingEngine {
         return orderBooks.computeIfAbsent(symbol, OrderBook::new);
     }
 
+    private Lock lockForSymbol(String symbol) {
+        return symbolLocks.computeIfAbsent(symbol, s -> new ReentrantLock());
+    }
+
     public List<Trade> submitOrder(Order order) {
+        Lock lock = lockForSymbol(order.getSymbol());
         lock.lock();
         try {
             OrderBook orderBook = getOrderBook(order.getSymbol());
@@ -47,7 +54,14 @@ public class MatchingEngine {
                 logger.info("Order {} fully filled", order.getId());
             }
 
-            trades.addAll(generatedTrades);
+            if (!generatedTrades.isEmpty()) {
+                tradesLock.lock();
+                try {
+                    trades.addAll(generatedTrades);
+                } finally {
+                    tradesLock.unlock();
+                }
+            }
             return generatedTrades;
         } finally {
             lock.unlock();
@@ -123,7 +137,9 @@ public class MatchingEngine {
             buyOrder.getId(),
             sellOrder.getId(),
             price,
-            quantity
+            quantity,
+            buyOrder.getAccountId(),
+            sellOrder.getAccountId()
         );
 
         trades.add(trade);
@@ -131,6 +147,7 @@ public class MatchingEngine {
     }
 
     public boolean cancelOrder(String orderId, String symbol) {
+        Lock lock = lockForSymbol(symbol);
         lock.lock();
         try {
             OrderBook orderBook = orderBooks.get(symbol);
@@ -138,57 +155,45 @@ public class MatchingEngine {
                 return false;
             }
 
-            return orderBook.getBidsAtPrice(BigDecimal.ZERO).stream()
-                .filter(o -> o.getId().equals(orderId))
-                .findFirst()
+            return orderBook.removeById(orderId)
                 .map(order -> {
                     order.cancel();
-                    orderBook.removeOrder(order);
                     return true;
                 })
-                .orElseGet(() -> 
-                    orderBook.getAsksAtPrice(BigDecimal.ZERO).stream()
-                        .filter(o -> o.getId().equals(orderId))
-                        .findFirst()
-                        .map(order -> {
-                            order.cancel();
-                            orderBook.removeOrder(order);
-                            return true;
-                        })
-                        .orElse(false)
-                );
+                .orElse(false);
         } finally {
             lock.unlock();
         }
     }
 
     public List<Trade> getTrades() {
-        lock.lock();
+        tradesLock.lock();
         try {
             return new ArrayList<>(trades);
         } finally {
-            lock.unlock();
+            tradesLock.unlock();
         }
     }
 
     public List<Trade> getTradesForSymbol(String symbol) {
-        lock.lock();
+        tradesLock.lock();
         try {
             return trades.stream()
                 .filter(t -> t.getSymbol().equals(symbol))
                 .toList();
         } finally {
-            lock.unlock();
+            tradesLock.unlock();
         }
     }
 
     public void clear() {
-        lock.lock();
+        orderBooks.clear();
+        symbolLocks.clear();
+        tradesLock.lock();
         try {
-            orderBooks.clear();
             trades.clear();
         } finally {
-            lock.unlock();
+            tradesLock.unlock();
         }
     }
 }

@@ -6,7 +6,6 @@ import org.example.lastro.dto.TransactionRequest;
 import org.example.lastro.dto.TransactionResponse;
 import org.example.lastro.service.TransactionService;
 import org.springframework.http.ResponseEntity;
-import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.*;
 
 @RestController

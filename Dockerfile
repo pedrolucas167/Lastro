@@ -10,9 +10,12 @@ FROM eclipse-temurin:25-jre
 WORKDIR /app
 COPY --from=builder /app/target/Lastro-*.jar app.jar
 
-# Create non-root user
-RUN groupadd -r lastro && useradd -r -g lastro lastro
-RUN chown -R lastro:lastro /app
+# curl é usado pelo HEALTHCHECK abaixo
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends curl \
+    && rm -rf /var/lib/apt/lists/* \
+    && groupadd -r lastro && useradd -r -g lastro lastro \
+    && chown -R lastro:lastro /app
 USER lastro
 
 EXPOSE 8080

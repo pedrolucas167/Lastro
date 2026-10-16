@@ -3,8 +3,8 @@ package org.example.lastro.metrics;
 import org.example.lastro.domain.Trade;
 import org.springframework.stereotype.Component;
 
+import com.sun.management.OperatingSystemMXBean;
 import java.lang.management.ManagementFactory;
-import java.lang.management.OperatingSystemMXBean;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.util.ArrayList;
@@ -13,12 +13,12 @@ import java.util.concurrent.CopyOnWriteArrayList;
 
 @Component
 public class MetricsCollector {
-    private final OperatingSystemMXBean osBean = ManagementFactory.getOperatingSystemMXBean();
-    private final List<MetricSnapshot> snapshots = new ArrayList<>();
+    private final OperatingSystemMXBean osBean = 
+        (OperatingSystemMXBean) ManagementFactory.getOperatingSystemMXBean();
+    private final List<MetricSnapshot> snapshots = new CopyOnWriteArrayList<>();
     private final List<Trade> trades = new CopyOnWriteArrayList<>();
 
     public MetricSnapshot collectSnapshot() {
-        double cpuLoad = osBean.getSystemLoadAverage();
         int availableProcessors = osBean.getAvailableProcessors();
         long totalMemory = Runtime.getRuntime().totalMemory();
         long freeMemory = Runtime.getRuntime().freeMemory();
@@ -27,7 +27,7 @@ public class MetricsCollector {
 
         MetricSnapshot snapshot = new MetricSnapshot(
             System.currentTimeMillis(),
-            cpuLoad,
+            readCpuLoadPercent(),
             availableProcessors,
             usedMemory,
             totalMemory,
@@ -36,6 +36,12 @@ public class MetricsCollector {
         
         snapshots.add(snapshot);
         return snapshot;
+    }
+
+    // getSystemLoadAverage() retorna -1 no Windows; getCpuLoad() retorna a fração 0.0-1.0.
+    private double readCpuLoadPercent() {
+        double cpuLoad = osBean.getCpuLoad();
+        return cpuLoad < 0 ? 0 : cpuLoad * 100.0;
     }
 
     public void recordTrade(Trade trade) {

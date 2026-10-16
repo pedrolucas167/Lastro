@@ -21,7 +21,7 @@ public class OrderService {
     public Order createOrder(String symbol, OrderSide side, OrderType type, 
                             BigDecimal price, int quantity, String accountId) {
         String orderId = UUID.randomUUID().toString();
-        Order order = new Order(orderId, symbol, side, type, price, new BigDecimal(quantity));
+        Order order = new Order(orderId, symbol, side, type, price, new BigDecimal(quantity), accountId);
         orders.put(orderId, order);
         
         logger.info("Created order {}: {} {} {} {} @ {} for account {}", 

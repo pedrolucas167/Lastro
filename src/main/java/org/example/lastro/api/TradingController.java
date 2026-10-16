@@ -3,9 +3,9 @@ package org.example.lastro.api;
 import jakarta.validation.Valid;
 import org.example.lastro.domain.*;
 import org.example.lastro.dto.*;
+import org.example.lastro.service.OrderExecutionResult;
 import org.example.lastro.service.TradingService;
 import org.springframework.http.ResponseEntity;
-import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.*;
 
 import java.math.BigDecimal;
@@ -26,7 +26,7 @@ public class TradingController {
         OrderSide side = OrderSide.valueOf(request.getSide().toUpperCase());
         OrderType type = OrderType.valueOf(request.getType().toUpperCase());
         
-        List<Trade> trades = tradingService.submitOrder(
+        OrderExecutionResult result = tradingService.submitOrder(
             request.getSymbol(),
             side,
             type,
@@ -35,19 +35,7 @@ public class TradingController {
             request.getAccountId()
         );
 
-        Order order = tradingService.getOrderBook(request.getSymbol())
-            .getBidsAtPrice(request.getPrice() != null ? request.getPrice() : BigDecimal.ZERO)
-            .stream()
-            .findFirst()
-            .orElse(null);
-
-        if (order == null) {
-            order = tradingService.getOrderBook(request.getSymbol())
-                .getAsksAtPrice(request.getPrice() != null ? request.getPrice() : BigDecimal.ZERO)
-                .stream()
-                .findFirst()
-                .orElse(null);
-        }
+        Order order = result.order();
 
         return ResponseEntity.ok(new OrderResponse(
             order.getId(),
