@@ -52,6 +52,34 @@ public class OrderBook {
         }
     }
 
+    public Optional<Order> removeById(String orderId) {
+        lock.lock();
+        try {
+            return removeByIdFrom(bids, orderId).or(() -> removeByIdFrom(asks, orderId));
+        } finally {
+            lock.unlock();
+        }
+    }
+
+    private Optional<Order> removeByIdFrom(ConcurrentSkipListMap<BigDecimal, LinkedList<Order>> book,
+                                           String orderId) {
+        for (Map.Entry<BigDecimal, LinkedList<Order>> entry : book.entrySet()) {
+            LinkedList<Order> orders = entry.getValue();
+            Iterator<Order> iterator = orders.iterator();
+            while (iterator.hasNext()) {
+                Order order = iterator.next();
+                if (order.getId().equals(orderId)) {
+                    iterator.remove();
+                    if (orders.isEmpty()) {
+                        book.remove(entry.getKey());
+                    }
+                    return Optional.of(order);
+                }
+            }
+        }
+        return Optional.empty();
+    }
+
     public Optional<Order> getBestBid() {
         lock.lock();
         try {

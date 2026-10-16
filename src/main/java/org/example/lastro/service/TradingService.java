@@ -28,7 +28,7 @@ public class TradingService {
         this.regulatoryValidationService = regulatoryValidationService;
     }
 
-    public List<Trade> submitOrder(String symbol, OrderSide side, OrderType type,
+    public OrderExecutionResult submitOrder(String symbol, OrderSide side, OrderType type,
                                    BigDecimal price, int quantity, String accountId) {
         regulatoryValidationService.validateOrder(symbol, side, type, price, quantity, accountId);
         
@@ -38,13 +38,13 @@ public class TradingService {
         
         if (!trades.isEmpty()) {
             for (Trade trade : trades) {
-                positionService.processTrade(trade, accountId, "counterparty-" + trade.getId());
+                positionService.processTrade(trade);
                 metricsCollector.recordTrade(trade);
             }
             logger.info("Order {} generated {} trades", order.getId(), trades.size());
         }
         
-        return trades;
+        return new OrderExecutionResult(order, trades);
     }
 
     public boolean cancelOrder(String orderId, String symbol) {

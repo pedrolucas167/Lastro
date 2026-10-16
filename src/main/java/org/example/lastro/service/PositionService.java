@@ -21,7 +21,9 @@ public class PositionService {
         return positions.computeIfAbsent(key, k -> new Position(accountId, symbol));
     }
 
-    public void processTrade(Trade trade, String buyAccountId, String sellAccountId) {
+    public void processTrade(Trade trade) {
+        String buyAccountId = trade.getBuyAccountId();
+        String sellAccountId = trade.getSellAccountId();
         Position buyPosition = getPosition(buyAccountId, trade.getSymbol());
         Position sellPosition = getPosition(sellAccountId, trade.getSymbol());
 
