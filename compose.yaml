@@ -1,1 +1,15 @@
-services: { }
+services:
+  lastro:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: lastro:latest
+    container_name: lastro
+    ports:
+      - "8080:8080"
+    environment:
+      # Fuso horário usado pela validação de horário de mercado (10:00-18:00).
+      TZ: America/Sao_Paulo
+      # Descomente para permitir ordens fora do horário de mercado (demos/testes):
+      # LASTRO_MARKET_ENABLED: "false"
+    restart: unless-stopped
