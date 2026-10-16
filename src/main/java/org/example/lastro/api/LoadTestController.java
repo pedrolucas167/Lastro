@@ -7,6 +7,7 @@ import org.example.lastro.metrics.MetricsCollector;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.List;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
@@ -16,7 +17,6 @@ import java.util.concurrent.TimeUnit;
 public class LoadTestController {
     private final LoadGenerator loadGenerator;
     private final MetricsCollector metricsCollector;
-    private final ScheduledExecutorService scheduler = Executors.newScheduledThreadPool(1);
 
     public LoadTestController(LoadGenerator loadGenerator, MetricsCollector metricsCollector) {
         this.loadGenerator = loadGenerator;
@@ -33,20 +33,26 @@ public class LoadTestController {
 
         metricsCollector.clearSnapshots();
 
+        List<String> accountIds;
         try {
-            loadGenerator.createTestAccounts(baseUrl, numAccounts);
+            accountIds = loadGenerator.createTestAccounts(baseUrl, numAccounts);
         } catch (Exception e) {
             return ResponseEntity.badRequest().body(
                 new LoadTestReport(null, null, "Failed to create test accounts: " + e.getMessage())
             );
         }
 
+        ScheduledExecutorService scheduler = Executors.newScheduledThreadPool(1);
         scheduler.scheduleAtFixedRate(() -> metricsCollector.collectSnapshot(), 
             0, metricsIntervalMs, TimeUnit.MILLISECONDS);
 
-        LoadTestResult result = loadGenerator.runTransferLoadTest(baseUrl, numAccounts, numTransfers, concurrency);
-        
-        scheduler.shutdown();
+        LoadTestResult result;
+        try {
+            result = loadGenerator.runTransferLoadTest(baseUrl, accountIds, numTransfers, concurrency);
+        } finally {
+            scheduler.shutdown();
+        }
+
         try {
             scheduler.awaitTermination(1, TimeUnit.SECONDS);
         } catch (InterruptedException e) {
