@@ -40,11 +40,7 @@ public class MatchingEngine {
             OrderBook orderBook = getOrderBook(order.getSymbol());
             List<Trade> generatedTrades = new ArrayList<>();
 
-            if (order.getSide() == OrderSide.BUY) {
-                matchBuyOrder(order, orderBook, generatedTrades);
-            } else {
-                matchSellOrder(order, orderBook, generatedTrades);
-            }
+            match(order, orderBook, generatedTrades);
 
             if (order.getRemainingQuantity() > 0) {
                 orderBook.addOrder(order);
@@ -68,62 +64,45 @@ public class MatchingEngine {
         }
     }
 
-    private void matchBuyOrder(Order buyOrder, OrderBook orderBook, List<Trade> trades) {
-        while (buyOrder.getRemainingQuantity() > 0) {
-            var bestAsk = orderBook.getBestAsk();
-            
-            if (bestAsk.isEmpty()) {
+    private void match(Order incoming, OrderBook orderBook, List<Trade> trades) {
+        boolean isBuy = incoming.getSide() == OrderSide.BUY;
+
+        while (incoming.getRemainingQuantity() > 0) {
+            var bestOpposite = isBuy ? orderBook.getBestAsk() : orderBook.getBestBid();
+
+            if (bestOpposite.isEmpty()) {
                 break;
             }
 
-            Order askOrder = bestAsk.get();
-            
-            if (buyOrder.getType() == OrderType.LIMIT && 
-                buyOrder.getPrice().compareTo(askOrder.getPrice()) < 0) {
+            Order resting = bestOpposite.get();
+
+            if (!crosses(incoming, resting, isBuy)) {
                 break;
             }
 
-            int matchQuantity = Math.min(buyOrder.getRemainingQuantity(), 
-                                        askOrder.getRemainingQuantity());
-            
-            BigDecimal matchPrice = buyOrder.getType() == OrderType.MARKET ? 
-                askOrder.getPrice() : askOrder.getPrice();
+            int matchQuantity = Math.min(incoming.getRemainingQuantity(),
+                                        resting.getRemainingQuantity());
 
-            executeTrade(buyOrder, askOrder, matchQuantity, matchPrice, trades);
-            
-            if (askOrder.getRemainingQuantity() == 0) {
-                orderBook.removeOrder(askOrder);
+            executeTrade(
+                isBuy ? incoming : resting,
+                isBuy ? resting : incoming,
+                matchQuantity,
+                resting.getPrice(),
+                trades
+            );
+
+            if (resting.getRemainingQuantity() == 0) {
+                orderBook.removeOrder(resting);
             }
         }
     }
 
-    private void matchSellOrder(Order sellOrder, OrderBook orderBook, List<Trade> trades) {
-        while (sellOrder.getRemainingQuantity() > 0) {
-            var bestBid = orderBook.getBestBid();
-            
-            if (bestBid.isEmpty()) {
-                break;
-            }
-
-            Order bidOrder = bestBid.get();
-            
-            if (sellOrder.getType() == OrderType.LIMIT && 
-                sellOrder.getPrice().compareTo(bidOrder.getPrice()) > 0) {
-                break;
-            }
-
-            int matchQuantity = Math.min(sellOrder.getRemainingQuantity(), 
-                                        bidOrder.getRemainingQuantity());
-            
-            BigDecimal matchPrice = sellOrder.getType() == OrderType.MARKET ? 
-                bidOrder.getPrice() : bidOrder.getPrice();
-
-            executeTrade(bidOrder, sellOrder, matchQuantity, matchPrice, trades);
-            
-            if (bidOrder.getRemainingQuantity() == 0) {
-                orderBook.removeOrder(bidOrder);
-            }
+    private boolean crosses(Order incoming, Order resting, boolean isBuy) {
+        if (incoming.getType() == OrderType.MARKET) {
+            return true;
         }
+        int comparison = incoming.getPrice().compareTo(resting.getPrice());
+        return isBuy ? comparison >= 0 : comparison <= 0;
     }
 
     private void executeTrade(Order buyOrder, Order sellOrder, int quantity, 
