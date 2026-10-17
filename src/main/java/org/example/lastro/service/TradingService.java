@@ -29,10 +29,11 @@ public class TradingService {
     }
 
     public OrderExecutionResult submitOrder(String symbol, OrderSide side, OrderType type,
-                                   BigDecimal price, int quantity, String accountId) {
+                                   BigDecimal price, int quantity, String accountId,
+                                   TimeInForce timeInForce) {
         regulatoryValidationService.validateOrder(symbol, side, type, price, quantity, accountId);
         
-        Order order = orderService.createOrder(symbol, side, type, price, quantity, accountId);
+        Order order = orderService.createOrder(symbol, side, type, price, quantity, accountId, timeInForce);
         
         List<Trade> trades = matchingEngine.submitOrder(order);
         

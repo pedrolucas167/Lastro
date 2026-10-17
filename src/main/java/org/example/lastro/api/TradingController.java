@@ -25,6 +25,7 @@ public class TradingController {
     public ResponseEntity<OrderResponse> createOrder(@Valid @RequestBody CreateOrderRequest request) {
         OrderSide side = OrderSide.valueOf(request.getSide().toUpperCase());
         OrderType type = OrderType.valueOf(request.getType().toUpperCase());
+        TimeInForce timeInForce = resolveTimeInForce(request.getTimeInForce());
         
         OrderExecutionResult result = tradingService.submitOrder(
             request.getSymbol(),
@@ -32,7 +33,8 @@ public class TradingController {
             type,
             request.getPrice(),
             request.getQuantity(),
-            request.getAccountId()
+            request.getAccountId(),
+            timeInForce
         );
 
         Order order = result.order();
@@ -42,12 +44,20 @@ public class TradingController {
             order.getSymbol(),
             order.getSide().name(),
             order.getType().name(),
+            order.getTimeInForce().name(),
             order.getPrice(),
             order.getOriginalQuantity().intValue(),
             order.getRemainingQuantity(),
             order.getStatus().name(),
             order.getCreatedAt()
         ));
+    }
+
+    private TimeInForce resolveTimeInForce(String value) {
+        if (value == null || value.isBlank()) {
+            return TimeInForce.GTC;
+        }
+        return TimeInForce.valueOf(value.toUpperCase());
     }
 
     @PostMapping("/orders/{orderId}/cancel")

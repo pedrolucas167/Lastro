@@ -18,10 +18,11 @@ public class Order {
     private final AtomicReference<OrderStatus> status;
     private final Instant createdAt;
     private final String accountId;
+    private final TimeInForce timeInForce;
     private final Lock lock = new ReentrantLock();
 
-    public Order(String id, String symbol, OrderSide side, OrderType type, 
-                 BigDecimal price, BigDecimal quantity, String accountId) {
+    public Order(String id, String symbol, OrderSide side, OrderType type,
+                 BigDecimal price, BigDecimal quantity, String accountId, TimeInForce timeInForce) {
         this.id = id;
         this.symbol = symbol;
         this.side = side;
@@ -32,6 +33,7 @@ public class Order {
         this.status = new AtomicReference<>(OrderStatus.PENDING);
         this.createdAt = Instant.now();
         this.accountId = accountId;
+        this.timeInForce = timeInForce;
     }
 
     public String getId() {
@@ -72,6 +74,10 @@ public class Order {
 
     public String getAccountId() {
         return accountId;
+    }
+
+    public TimeInForce getTimeInForce() {
+        return timeInForce;
     }
 
     public boolean fill(int quantity) {

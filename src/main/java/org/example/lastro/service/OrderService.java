@@ -4,6 +4,7 @@ import org.example.lastro.domain.Order;
 import org.example.lastro.domain.OrderSide;
 import org.example.lastro.domain.OrderStatus;
 import org.example.lastro.domain.OrderType;
+import org.example.lastro.domain.TimeInForce;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -20,12 +21,17 @@ public class OrderService {
 
     public Order createOrder(String symbol, OrderSide side, OrderType type, 
                             BigDecimal price, int quantity, String accountId) {
+        return createOrder(symbol, side, type, price, quantity, accountId, TimeInForce.GTC);
+    }
+
+    public Order createOrder(String symbol, OrderSide side, OrderType type,
+                            BigDecimal price, int quantity, String accountId, TimeInForce timeInForce) {
         String orderId = UUID.randomUUID().toString();
-        Order order = new Order(orderId, symbol, side, type, price, new BigDecimal(quantity), accountId);
+        Order order = new Order(orderId, symbol, side, type, price, new BigDecimal(quantity), accountId, timeInForce);
         orders.put(orderId, order);
         
-        logger.info("Created order {}: {} {} {} {} @ {} for account {}", 
-            orderId, side, type, quantity, symbol, price, accountId);
+        logger.info("Created order {}: {} {} {} {} @ {} ({}) for account {}", 
+            orderId, side, type, quantity, symbol, price, timeInForce, accountId);
         
         return order;
     }

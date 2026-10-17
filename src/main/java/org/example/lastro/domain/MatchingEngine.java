@@ -40,12 +40,25 @@ public class MatchingEngine {
             OrderBook orderBook = getOrderBook(order.getSymbol());
             List<Trade> generatedTrades = new ArrayList<>();
 
+            if (order.getTimeInForce() == TimeInForce.FOK && !isFullyFillable(order, orderBook)) {
+                order.cancel();
+                logger.info("FOK order {} cancelled: liquidity insufficient for a full fill",
+                    order.getId());
+                return generatedTrades;
+            }
+
             match(order, orderBook, generatedTrades);
 
             if (order.getRemainingQuantity() > 0) {
-                orderBook.addOrder(order);
-                logger.info("Order {} added to book with remaining quantity {}", 
-                    order.getId(), order.getRemainingQuantity());
+                if (restsOnBook(order)) {
+                    orderBook.addOrder(order);
+                    logger.info("Order {} added to book with remaining quantity {}",
+                        order.getId(), order.getRemainingQuantity());
+                } else {
+                    order.cancel();
+                    logger.info("Order {} cancelled with remaining quantity {}",
+                        order.getId(), order.getRemainingQuantity());
+                }
             } else {
                 logger.info("Order {} fully filled", order.getId());
             }
@@ -57,6 +70,27 @@ public class MatchingEngine {
         } finally {
             lock.unlock();
         }
+    }
+
+    private boolean restsOnBook(Order order) {
+        return order.getTimeInForce() == TimeInForce.GTC;
+    }
+
+    private boolean isFullyFillable(Order incoming, OrderBook orderBook) {
+        boolean isBuy = incoming.getSide() == OrderSide.BUY;
+        int fillableQuantity = 0;
+
+        for (Order resting : orderBook.getOppositeSideSnapshot(incoming.getSide())) {
+            if (!crosses(incoming, resting, isBuy)) {
+                break;
+            }
+            fillableQuantity += resting.getRemainingQuantity();
+            if (fillableQuantity >= incoming.getRemainingQuantity()) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private void match(Order incoming, OrderBook orderBook, List<Trade> trades) {

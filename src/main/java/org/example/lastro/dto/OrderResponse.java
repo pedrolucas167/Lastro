@@ -13,6 +13,7 @@ public class OrderResponse {
     private String symbol;
     private String side;
     private String type;
+    private String timeInForce;
     private BigDecimal price;
     private Integer originalQuantity;
     private Integer remainingQuantity;

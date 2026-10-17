@@ -126,6 +126,20 @@ public class OrderBook {
         }
     }
 
+    /** Ordens do lado oposto em prioridade preco-tempo (melhor preco primeiro). */
+    public List<Order> getOppositeSideSnapshot(OrderSide incomingSide) {
+        lock.lock();
+        try {
+            ConcurrentSkipListMap<BigDecimal, LinkedList<Order>> book =
+                incomingSide == OrderSide.BUY ? asks : bids;
+            return book.values().stream()
+                .flatMap(List::stream)
+                .toList();
+        } finally {
+            lock.unlock();
+        }
+    }
+
     public BigDecimal getSpread() {
         Optional<Order> bestBid = getBestBid();
         Optional<Order> bestAsk = getBestAsk();
