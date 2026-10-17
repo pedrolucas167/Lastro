@@ -1,7 +1,5 @@
 package org.example.lastro.journal;
 
-import org.example.lastro.service.AccountService;
-import org.example.lastro.service.TransactionService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.ApplicationArguments;
@@ -16,14 +14,11 @@ public class JournalReplay implements ApplicationRunner {
     private static final Logger logger = LoggerFactory.getLogger(JournalReplay.class);
 
     private final EventStore eventStore;
-    private final AccountService accountService;
-    private final TransactionService transactionService;
+    private final List<JournalRebuildable> rebuildables;
 
-    public JournalReplay(EventStore eventStore, AccountService accountService,
-                         TransactionService transactionService) {
+    public JournalReplay(EventStore eventStore, List<JournalRebuildable> rebuildables) {
         this.eventStore = eventStore;
-        this.accountService = accountService;
-        this.transactionService = transactionService;
+        this.rebuildables = rebuildables;
     }
 
     @Override
@@ -33,8 +28,7 @@ public class JournalReplay implements ApplicationRunner {
             return;
         }
 
-        accountService.rebuild(events);
-        transactionService.rebuild(events);
+        rebuildables.forEach(rebuildable -> rebuildable.rebuild(events));
         logger.info("Rebuilt in-memory state from {} journaled events", events.size());
     }
 }

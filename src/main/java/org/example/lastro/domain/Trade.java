@@ -16,6 +16,13 @@ public class Trade {
 
     public Trade(String id, String symbol, String buyOrderId, String sellOrderId, 
                  BigDecimal price, int quantity, String buyAccountId, String sellAccountId) {
+        this(id, symbol, buyOrderId, sellOrderId, price, quantity, buyAccountId, sellAccountId,
+            Instant.now());
+    }
+
+    public Trade(String id, String symbol, String buyOrderId, String sellOrderId,
+                 BigDecimal price, int quantity, String buyAccountId, String sellAccountId,
+                 Instant timestamp) {
         this.id = id;
         this.symbol = symbol;
         this.buyOrderId = buyOrderId;
@@ -24,7 +31,7 @@ public class Trade {
         this.sellAccountId = sellAccountId;
         this.price = price;
         this.quantity = quantity;
-        this.timestamp = Instant.now();
+        this.timestamp = timestamp;
     }
 
     public String getId() {

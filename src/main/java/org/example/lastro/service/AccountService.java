@@ -8,6 +8,8 @@ import org.example.lastro.journal.DomainEvent;
 import org.example.lastro.journal.EventStore;
 import org.example.lastro.journal.FundsCredited;
 import org.example.lastro.journal.FundsDebited;
+import org.example.lastro.journal.JournalRebuildable;
+import org.example.lastro.journal.MoneyEvent;
 import org.example.lastro.journal.TransferCompleted;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -21,7 +23,7 @@ import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
 @Service
-public class AccountService {
+public class AccountService implements JournalRebuildable {
     private static final Logger logger = LoggerFactory.getLogger(AccountService.class);
     private final Map<String, Account> accounts = new ConcurrentHashMap<>();
     private final EventStore eventStore;
@@ -82,11 +84,13 @@ public class AccountService {
     public void rebuild(List<DomainEvent> events) {
         accounts.clear();
         for (DomainEvent event : events) {
-            apply(event);
+            if (event instanceof MoneyEvent moneyEvent) {
+                apply(moneyEvent);
+            }
         }
     }
 
-    private void apply(DomainEvent event) {
+    private void apply(MoneyEvent event) {
         switch (event) {
             case AccountOpened e -> accounts.put(e.accountId(), new Account(e.accountId(), e.initialBalance()));
             case FundsCredited e -> account(e.accountId()).credit(e.amount());

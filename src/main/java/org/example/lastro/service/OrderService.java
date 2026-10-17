@@ -5,11 +5,14 @@ import org.example.lastro.domain.OrderSide;
 import org.example.lastro.domain.OrderStatus;
 import org.example.lastro.domain.OrderType;
 import org.example.lastro.domain.TimeInForce;
+import org.example.lastro.journal.EventStore;
+import org.example.lastro.journal.OrderSubmitted;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
+import java.time.Instant;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
@@ -18,6 +21,11 @@ import java.util.concurrent.ConcurrentHashMap;
 public class OrderService {
     private static final Logger logger = LoggerFactory.getLogger(OrderService.class);
     private final Map<String, Order> orders = new ConcurrentHashMap<>();
+    private final EventStore eventStore;
+
+    public OrderService(EventStore eventStore) {
+        this.eventStore = eventStore;
+    }
 
     public Order createOrder(String symbol, OrderSide side, OrderType type, 
                             BigDecimal price, int quantity, String accountId) {
@@ -27,12 +35,23 @@ public class OrderService {
     public Order createOrder(String symbol, OrderSide side, OrderType type,
                             BigDecimal price, int quantity, String accountId, TimeInForce timeInForce) {
         String orderId = UUID.randomUUID().toString();
-        Order order = new Order(orderId, symbol, side, type, price, new BigDecimal(quantity), accountId, timeInForce);
-        orders.put(orderId, order);
-        
-        logger.info("Created order {}: {} {} {} {} @ {} ({}) for account {}", 
+        eventStore.append(new OrderSubmitted(orderId, symbol, side, type, price, quantity,
+            accountId, timeInForce, Instant.now()));
+
+        Order order = register(orderId, symbol, side, type, price, quantity, accountId, timeInForce);
+
+        logger.info("Created order {}: {} {} {} {} @ {} ({}) for account {}",
             orderId, side, type, quantity, symbol, price, timeInForce, accountId);
-        
+
+        return order;
+    }
+
+    /** Recria uma ordem a partir do journal, sem regravar o evento. */
+    public Order register(String orderId, String symbol, OrderSide side, OrderType type,
+                          BigDecimal price, int quantity, String accountId, TimeInForce timeInForce) {
+        Order order = new Order(orderId, symbol, side, type, price, new BigDecimal(quantity),
+            accountId, timeInForce);
+        orders.put(orderId, order);
         return order;
     }
 

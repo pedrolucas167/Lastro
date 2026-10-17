@@ -1,32 +1,45 @@
 package org.example.lastro.service;
 
 import org.example.lastro.domain.*;
+import org.example.lastro.journal.DomainEvent;
+import org.example.lastro.journal.EventStore;
+import org.example.lastro.journal.JournalRebuildable;
+import org.example.lastro.journal.OrderCancelled;
+import org.example.lastro.journal.OrderReplaced;
+import org.example.lastro.journal.OrderSubmitted;
+import org.example.lastro.journal.TradeExecuted;
+import org.example.lastro.journal.TradingEvent;
 import org.example.lastro.metrics.MetricsCollector;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
+import java.time.Instant;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 
 @Service
-public class TradingService {
+public class TradingService implements JournalRebuildable {
     private static final Logger logger = LoggerFactory.getLogger(TradingService.class);
     private final MatchingEngine matchingEngine;
     private final OrderService orderService;
     private final PositionService positionService;
     private final MetricsCollector metricsCollector;
     private final RegulatoryValidationService regulatoryValidationService;
+    private final EventStore eventStore;
 
     public TradingService(MatchingEngine matchingEngine, OrderService orderService,
                          PositionService positionService, MetricsCollector metricsCollector,
-                         RegulatoryValidationService regulatoryValidationService) {
+                         RegulatoryValidationService regulatoryValidationService,
+                         EventStore eventStore) {
         this.matchingEngine = matchingEngine;
         this.orderService = orderService;
         this.positionService = positionService;
         this.metricsCollector = metricsCollector;
         this.regulatoryValidationService = regulatoryValidationService;
+        this.eventStore = eventStore;
     }
 
     public OrderExecutionResult submitOrder(String symbol, OrderSide side, OrderType type,
@@ -34,12 +47,13 @@ public class TradingService {
                                    TimeInForce timeInForce) {
         regulatoryValidationService.validateOrder(symbol, side, type, price, quantity, accountId);
         
+        // O OrderService registra o OrderSubmitted no journal ao criar a ordem.
         Order order = orderService.createOrder(symbol, side, type, price, quantity, accountId, timeInForce);
         
         List<Trade> trades = matchingEngine.submitOrder(order);
         
         if (!trades.isEmpty()) {
-            applyTrades(trades);
+            recordTrades(trades);
             logger.info("Order {} generated {} trades", order.getId(), trades.size());
         }
         
@@ -59,27 +73,34 @@ public class TradingService {
         regulatoryValidationService.validateOrder(symbol, order.getSide(), order.getType(),
             price, quantity, order.getAccountId());
 
+        BigDecimal amendedQuantity = new BigDecimal(quantity);
+        eventStore.append(new OrderReplaced(orderId, symbol, price, amendedQuantity, Instant.now()));
+
         Optional<List<Trade>> generatedTrades =
-            matchingEngine.replaceOrder(orderId, symbol, price, new BigDecimal(quantity));
+            matchingEngine.replaceOrder(orderId, symbol, price, amendedQuantity);
         if (generatedTrades.isEmpty()) {
             return Optional.empty();
         }
 
         List<Trade> trades = generatedTrades.get();
-        applyTrades(trades);
+        recordTrades(trades);
         logger.info("Order {} replaced and generated {} trades", orderId, trades.size());
 
         return Optional.of(new OrderExecutionResult(order, trades));
     }
 
-    private void applyTrades(List<Trade> trades) {
+    private void recordTrades(List<Trade> trades) {
         for (Trade trade : trades) {
+            eventStore.append(new TradeExecuted(trade.getId(), trade.getSymbol(),
+                trade.getBuyOrderId(), trade.getSellOrderId(), trade.getPrice(), trade.getQuantity(),
+                trade.getBuyAccountId(), trade.getSellAccountId(), trade.getTimestamp()));
             positionService.processTrade(trade);
             metricsCollector.recordTrade(trade);
         }
     }
 
     public boolean cancelOrder(String orderId, String symbol) {
+        eventStore.append(new OrderCancelled(orderId, symbol, Instant.now()));
         return matchingEngine.cancelOrder(orderId, symbol);
     }
 
@@ -105,6 +126,37 @@ public class TradingService {
 
     public BigDecimal getPositionPnL(String accountId, String symbol, BigDecimal currentPrice) {
         return positionService.getPnL(accountId, symbol, currentPrice);
+    }
+
+    /**
+     * Reconstroi o engine a partir do journal, reexecutando os comandos na mesma ordem.
+     * Como o matching e deterministico, o book e as posicoes voltam ao mesmo estado; os
+     * trades sao restaurados do journal (preservando id e timestamp).
+     */
+    public void rebuild(List<DomainEvent> events) {
+        clear();
+        List<Trade> journaledTrades = new ArrayList<>();
+
+        for (DomainEvent event : events) {
+            if (!(event instanceof TradingEvent tradingEvent)) {
+                continue;
+            }
+
+            switch (tradingEvent) {
+                case OrderSubmitted e -> matchingEngine.submitOrder(orderService.register(
+                    e.orderId(), e.symbol(), e.side(), e.orderType(), e.price(), e.quantity(),
+                    e.accountId(), e.timeInForce()));
+                case OrderCancelled e -> matchingEngine.cancelOrder(e.orderId(), e.symbol());
+                case OrderReplaced e -> matchingEngine.replaceOrder(e.orderId(), e.symbol(),
+                    e.price(), e.quantity());
+                case TradeExecuted e -> journaledTrades.add(new Trade(e.tradeId(), e.symbol(),
+                    e.buyOrderId(), e.sellOrderId(), e.price(), e.quantity(), e.buyAccountId(),
+                    e.sellAccountId(), e.occurredAt()));
+            }
+        }
+
+        matchingEngine.replaceTrades(journaledTrades);
+        journaledTrades.forEach(positionService::processTrade);
     }
 
     public void clear() {

@@ -15,7 +15,11 @@ public class JdbcEventStore implements EventStore {
         "AccountOpened", AccountOpened.class,
         "FundsCredited", FundsCredited.class,
         "FundsDebited", FundsDebited.class,
-        "TransferCompleted", TransferCompleted.class
+        "TransferCompleted", TransferCompleted.class,
+        "OrderSubmitted", OrderSubmitted.class,
+        "OrderCancelled", OrderCancelled.class,
+        "OrderReplaced", OrderReplaced.class,
+        "TradeExecuted", TradeExecuted.class
     );
 
     private final JdbcTemplate jdbcTemplate;

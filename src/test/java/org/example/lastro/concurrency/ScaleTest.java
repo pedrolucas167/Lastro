@@ -5,6 +5,7 @@ import org.example.lastro.domain.Order;
 import org.example.lastro.domain.OrderSide;
 import org.example.lastro.domain.OrderType;
 import org.example.lastro.domain.Position;
+import org.example.lastro.journal.InMemoryEventStore;
 import org.example.lastro.service.OrderService;
 import org.example.lastro.service.PositionService;
 import org.junit.jupiter.api.BeforeEach;
@@ -32,7 +33,7 @@ class ScaleTest {
     @BeforeEach
     void setUp() {
         matchingEngine = new MatchingEngine();
-        orderService = new OrderService();
+        orderService = new OrderService(new InMemoryEventStore());
     }
 
     @Test
