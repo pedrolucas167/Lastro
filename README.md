@@ -224,4 +224,4 @@ curl http://localhost:8080/api/loadtest/metrics
 
 ## Licença
 
-[Apache License 2.0](./LICENSE) © 2026 Pedro Lucas
+[Apache License 2.0](./LICENSE) © 2026 Pedro Lucas Marques
