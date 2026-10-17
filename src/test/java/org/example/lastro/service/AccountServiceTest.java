@@ -3,6 +3,7 @@ package org.example.lastro.service;
 import org.example.lastro.domain.Account;
 import org.example.lastro.exception.AccountNotFoundException;
 import org.example.lastro.exception.InsufficientFundsException;
+import org.example.lastro.journal.InMemoryEventStore;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.DisplayName;
@@ -16,7 +17,7 @@ class AccountServiceTest {
 
     @BeforeEach
     void setUp() {
-        accountService = new AccountService();
+        accountService = new AccountService(new InMemoryEventStore());
     }
 
     @Test

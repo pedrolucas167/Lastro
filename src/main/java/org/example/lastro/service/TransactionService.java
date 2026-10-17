@@ -5,12 +5,16 @@ import org.example.lastro.domain.Transaction;
 import org.example.lastro.domain.TransactionStatus;
 import org.example.lastro.domain.TransactionType;
 import org.example.lastro.exception.TransactionFailedException;
+import org.example.lastro.journal.DomainEvent;
+import org.example.lastro.journal.EventStore;
+import org.example.lastro.journal.TransferCompleted;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
@@ -20,11 +24,14 @@ public class TransactionService {
     private static final Logger logger = LoggerFactory.getLogger(TransactionService.class);
     private final AccountService accountService;
     private final IdempotencyService idempotencyService;
+    private final EventStore eventStore;
     private final Map<String, Transaction> transactions = new ConcurrentHashMap<>();
 
-    public TransactionService(AccountService accountService, IdempotencyService idempotencyService) {
+    public TransactionService(AccountService accountService, IdempotencyService idempotencyService,
+                              EventStore eventStore) {
         this.accountService = accountService;
         this.idempotencyService = idempotencyService;
+        this.eventStore = eventStore;
     }
 
     public Transaction transfer(String fromAccountId, String toAccountId, BigDecimal amount) {
@@ -54,6 +61,7 @@ public class TransactionService {
 
             if (fromAccount.tryDebit(amount)) {
                 toAccount.credit(amount);
+                journalTransfer(transactionId, fromAccountId, toAccountId, amount, fromAccount, toAccount);
                 transaction.setStatus(TransactionStatus.COMPLETED);
                 logger.info("Transfer {} completed successfully", transactionId);
             } else {
@@ -68,6 +76,32 @@ public class TransactionService {
 
         transactions.put(transactionId, transaction);
         return transaction;
+    }
+
+    private void journalTransfer(String transactionId, String fromAccountId, String toAccountId,
+                                 BigDecimal amount, Account fromAccount, Account toAccount) {
+        try {
+            eventStore.append(new TransferCompleted(
+                transactionId, fromAccountId, toAccountId, amount, Instant.now()));
+        } catch (RuntimeException e) {
+            // A transferencia ja foi aplicada em memoria; desfaz para nao divergir do journal.
+            toAccount.debit(amount);
+            fromAccount.credit(amount);
+            throw e;
+        }
+    }
+
+    /** Reconstroi as transacoes a partir do journal. */
+    public void rebuild(List<DomainEvent> events) {
+        transactions.clear();
+        for (DomainEvent event : events) {
+            if (event instanceof TransferCompleted e) {
+                Transaction transaction = new Transaction(
+                    e.transactionId(), e.fromAccountId(), e.toAccountId(), e.amount(), TransactionType.TRANSFER);
+                transaction.setStatus(TransactionStatus.COMPLETED);
+                transactions.put(e.transactionId(), transaction);
+            }
+        }
     }
 
     public Transaction getTransaction(String transactionId) {
