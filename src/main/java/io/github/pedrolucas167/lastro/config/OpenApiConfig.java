@@ -17,8 +17,8 @@ public class OpenApiConfig {
     @Value("${lastro.version}")
     private String version;
 
-    // Sem entrada "servers": o Swagger UI resolve a URL pela requisição, o que
-    // mantém a especificação correta em qualquer ambiente (dev, container, proxy).
+    // Sem servidor fixo no codigo: o springdoc deriva a URL da requisicao, o que
+    // mantem a especificacao correta em qualquer ambiente (dev, container, proxy).
     @Bean
     public OpenAPI lastroOpenAPI() {
         Contact contact = new Contact();
