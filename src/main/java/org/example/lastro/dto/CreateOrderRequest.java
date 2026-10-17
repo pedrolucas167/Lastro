@@ -18,6 +18,8 @@ public class CreateOrderRequest {
     @NotNull(message = "Type is required")
     private String type;
 
+    private String timeInForce;
+
     private BigDecimal price;
 
     @NotNull(message = "Quantity is required")
