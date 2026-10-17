@@ -7,6 +7,7 @@ import org.example.lastro.domain.TransactionType;
 import org.example.lastro.exception.TransactionFailedException;
 import org.example.lastro.journal.DomainEvent;
 import org.example.lastro.journal.EventStore;
+import org.example.lastro.journal.JournalRebuildable;
 import org.example.lastro.journal.TransferCompleted;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -20,7 +21,7 @@ import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
 @Service
-public class TransactionService {
+public class TransactionService implements JournalRebuildable {
     private static final Logger logger = LoggerFactory.getLogger(TransactionService.class);
     private final AccountService accountService;
     private final IdempotencyService idempotencyService;

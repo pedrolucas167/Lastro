@@ -5,7 +5,7 @@ import java.time.Instant;
 
 public record TransferCompleted(String transactionId, String fromAccountId, String toAccountId,
                                 BigDecimal amount, Instant occurredAt)
-        implements DomainEvent {
+        implements MoneyEvent {
 
     @Override
     public String type() {

@@ -4,7 +4,7 @@ import java.math.BigDecimal;
 import java.time.Instant;
 
 public record AccountOpened(String accountId, BigDecimal initialBalance, Instant occurredAt)
-        implements DomainEvent {
+        implements MoneyEvent {
 
     @Override
     public String type() {

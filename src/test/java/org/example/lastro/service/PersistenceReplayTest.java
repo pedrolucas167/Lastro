@@ -9,6 +9,7 @@ import org.example.lastro.journal.JournalReplay;
 import org.junit.jupiter.api.Test;
 
 import java.math.BigDecimal;
+import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -77,7 +78,7 @@ class PersistenceReplayTest {
         AccountService readerAccounts = new AccountService(eventStore);
         TransactionService readerTransactions =
             new TransactionService(readerAccounts, new IdempotencyService(), eventStore);
-        new JournalReplay(eventStore, readerAccounts, readerTransactions).run(null);
+        new JournalReplay(eventStore, List.of(readerAccounts, readerTransactions)).run(null);
 
         assertEquals(0, new BigDecimal("120.00").compareTo(readerAccounts.getAccount(a.getId()).getBalance()));
         assertEquals(0, new BigDecimal("30.00").compareTo(readerAccounts.getAccount(b.getId()).getBalance()));

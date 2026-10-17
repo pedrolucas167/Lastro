@@ -230,6 +230,12 @@ public class MatchingEngine {
             .toList();
     }
 
+    /** Substitui o log de trades (usado no replay, para preservar id e timestamp do journal). */
+    public void replaceTrades(List<Trade> trades) {
+        this.trades.clear();
+        this.trades.addAll(trades);
+    }
+
     public void clear() {
         orderBooks.clear();
         symbolLocks.clear();

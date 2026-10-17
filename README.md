@@ -125,7 +125,7 @@ A API estará disponível em `http://localhost:8080`
 
 ### Persistência
 
-Cada movimento de dinheiro (conta aberta, crédito, débito, transferência) é registrado como um **evento imutável** em um **journal append-only**. No startup, o estado em memória é reconstruído a partir do journal — os dados sobrevivem a reinícios e o próprio journal serve como trilha de auditoria.
+Cada mudança de estado — movimento de dinheiro (conta aberta, crédito, débito, transferência) e atividade do engine (ordens enviadas, canceladas, substituídas e trades executados) — é registrada como um **evento imutável** em um **journal append-only**. No startup, o estado em memória é reconstruído a partir do journal: as contas e transações são reaplicadas, e o engine **reexecuta os comandos na mesma ordem**, restaurando o book (com prioridade preço-tempo), as posições e os trades — os dados sobrevivem a reinícios e o próprio journal serve como trilha de auditoria.
 
 - **Desenvolvimento/testes**: H2 embutido em memória, sem configuração.
 - **Produção/demo**: Postgres via Compose:

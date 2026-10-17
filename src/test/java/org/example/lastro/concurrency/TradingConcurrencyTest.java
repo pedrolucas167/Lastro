@@ -1,6 +1,7 @@
 package org.example.lastro.concurrency;
 
 import org.example.lastro.domain.*;
+import org.example.lastro.journal.InMemoryEventStore;
 import org.example.lastro.service.OrderService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -22,7 +23,7 @@ public class TradingConcurrencyTest {
     @BeforeEach
     void setUp() {
         matchingEngine = new MatchingEngine();
-        orderService = new OrderService();
+        orderService = new OrderService(new InMemoryEventStore());
     }
 
     @Test
