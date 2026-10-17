@@ -1,5 +1,6 @@
 package org.example.lastro.service;
 
+import org.example.lastro.config.PriceBandProperties;
 import org.example.lastro.domain.OrderSide;
 import org.example.lastro.domain.OrderType;
 import org.example.lastro.exception.RegulatoryException;
@@ -22,16 +23,19 @@ public class RegulatoryValidationService {
     private static final int MAX_QUANTITY = 1000000;
     private static final BigDecimal MAX_ORDER_VALUE = new BigDecimal("100000000");
 
+    private final PriceBandProperties priceBand;
     private final boolean marketEnabled;
     private final boolean weekendTradingEnabled;
     private final LocalTime marketOpen;
     private final LocalTime marketClose;
 
     public RegulatoryValidationService(
+            PriceBandProperties priceBand,
             @Value("${lastro.market.enabled:true}") boolean marketEnabled,
             @Value("${lastro.market.weekend-trading-enabled:false}") boolean weekendTradingEnabled,
             @Value("${lastro.market.open:10:00}") String marketOpen,
             @Value("${lastro.market.close:18:00}") String marketClose) {
+        this.priceBand = priceBand;
         this.marketEnabled = marketEnabled;
         this.weekendTradingEnabled = weekendTradingEnabled;
         this.marketOpen = LocalTime.parse(marketOpen);
@@ -43,6 +47,7 @@ public class RegulatoryValidationService {
         validateMarketHours();
         validateQuantity(quantity);
         validatePrice(price, type);
+        validatePriceBand(symbol, price, type);
         validateOrderValue(price, quantity);
         validateSymbol(symbol);
         
@@ -101,6 +106,27 @@ public class RegulatoryValidationService {
             if (price.compareTo(BigDecimal.ZERO) <= 0) {
                 throw new RegulatoryException("Price must be positive");
             }
+        }
+    }
+
+    private void validatePriceBand(String symbol, BigDecimal price, OrderType type) {
+        if (!priceBand.isEnabled() || type == OrderType.MARKET || price == null) {
+            return;
+        }
+
+        BigDecimal reference = priceBand.getReferencePrices().get(symbol);
+        if (reference == null) {
+            return;
+        }
+
+        BigDecimal factor = priceBand.getPercent().movePointLeft(2);
+        BigDecimal lowerBound = reference.multiply(BigDecimal.ONE.subtract(factor));
+        BigDecimal upperBound = reference.multiply(BigDecimal.ONE.add(factor));
+
+        if (price.compareTo(lowerBound) < 0 || price.compareTo(upperBound) > 0) {
+            throw new RegulatoryException(String.format(
+                "Price %s for %s is outside the allowed band [%s, %s]",
+                price, symbol, lowerBound, upperBound));
         }
     }
 
