@@ -8,8 +8,9 @@ import org.example.lastro.domain.Position;
 import org.example.lastro.service.OrderService;
 import org.example.lastro.service.PositionService;
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Tag;
+import org.junit.jupiter.api.Test;
 
 import java.math.BigDecimal;
 import java.util.ArrayList;
@@ -22,6 +23,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.junit.jupiter.api.Assertions.*;
 
+@Tag("slow")
 class ScaleTest {
     private MatchingEngine matchingEngine;
     private OrderService orderService;

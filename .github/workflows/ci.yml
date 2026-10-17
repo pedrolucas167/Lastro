@@ -4,6 +4,9 @@ on:
   push:
     branches: [main]
   pull_request:
+  # Suite completa (inclui os testes @Tag("slow")) roda tambem toda madrugada.
+  schedule:
+    - cron: '0 6 * * *'
 
 # Cancela execucoes antigas do mesmo PR/branch: economiza minutos de runner.
 concurrency:
@@ -29,9 +32,15 @@ jobs:
           distribution: temurin
           cache: maven
 
-      # verify compila uma unica vez, roda os testes e empacota (sem build duplicado).
-      - name: Build and test
+      # PRs: feedback rapido, sem os testes pesados (@Tag("slow")).
+      - name: Build and test (fast)
+        if: github.event_name == 'pull_request'
         run: ./mvnw -B -ntp verify
+
+      # main e agendamento: suite completa, incluindo os testes de escala.
+      - name: Build and test (full)
+        if: github.event_name != 'pull_request'
+        run: ./mvnw -B -ntp -Pall-tests verify
 
       - name: Upload test reports
         if: always()
