@@ -8,11 +8,6 @@ O formato segue [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/) e o 
 
 ## [Unreleased]
 
-### Adicionado
-
-- Journal append-only do engine (ordens enviadas, canceladas, substituídas e trades executados) com replay no startup, restaurando book, posições e trades.
-- Licença Apache-2.0 e metadados do projeto para open-source.
-
 ## [0.1.0] - 2026-10-17
 
 Primeira versão pública: o núcleo de matching, com durabilidade e controles de mercado.
@@ -25,8 +20,10 @@ Primeira versão pública: o núcleo de matching, com durabilidade e controles d
 - Trades, posições e PnL por conta/símbolo.
 - Contas, crédito/débito e transferências com idempotência.
 - Journal append-only de contas e transações, com replay no startup.
+- Journal append-only do engine (ordens enviadas, canceladas, substituídas e trades executados) com replay no startup, restaurando book, posições e trades.
 - Controles de mercado: bandas de preço (limit up/down) e halt/circuit breaker.
 - Validações regulatórias: janela de negociação, limites de quantidade/preço/valor e formato do símbolo.
 - Persistência em Postgres via `docker compose`, ou H2 embutido em memória por padrão.
 - Métricas (Actuator/Prometheus), load generator e documentação OpenAPI.
 - CI com suíte rápida em PRs e completa no `main`/agendada; build da imagem Docker.
+- Licença Apache-2.0 e metadados do projeto para open-source.
