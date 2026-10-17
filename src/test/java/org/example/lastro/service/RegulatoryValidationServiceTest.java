@@ -15,6 +15,8 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 class RegulatoryValidationServiceTest {
     private static final String SYMBOL = "PETR4";
 
+    private final MarketHaltService haltService = new MarketHaltService();
+
     private PriceBandProperties priceBand(BigDecimal reference) {
         PriceBandProperties properties = new PriceBandProperties();
         properties.setReferencePrices(Map.of(SYMBOL, reference));
@@ -22,7 +24,7 @@ class RegulatoryValidationServiceTest {
     }
 
     private RegulatoryValidationService service(PriceBandProperties properties) {
-        return new RegulatoryValidationService(properties, false, true, "00:00", "23:59");
+        return new RegulatoryValidationService(properties, haltService, false, true, "00:00", "23:59");
     }
 
     @Test
@@ -72,5 +74,24 @@ class RegulatoryValidationServiceTest {
 
         assertDoesNotThrow(() -> service.validateOrder(
             SYMBOL, OrderSide.BUY, OrderType.MARKET, null, 100, "acc-1"));
+    }
+
+    @Test
+    void rejectsOrdersForHaltedSymbol() {
+        haltService.halt(SYMBOL, "circuit breaker");
+        RegulatoryValidationService service = service(priceBand(new BigDecimal("30.50")));
+
+        assertThrows(RegulatoryException.class, () -> service.validateOrder(
+            SYMBOL, OrderSide.BUY, OrderType.LIMIT, new BigDecimal("30.00"), 100, "acc-1"));
+    }
+
+    @Test
+    void acceptsOrdersAgainAfterResume() {
+        haltService.halt(SYMBOL, "circuit breaker");
+        haltService.resume(SYMBOL);
+        RegulatoryValidationService service = service(priceBand(new BigDecimal("30.50")));
+
+        assertDoesNotThrow(() -> service.validateOrder(
+            SYMBOL, OrderSide.BUY, OrderType.LIMIT, new BigDecimal("30.00"), 100, "acc-1"));
     }
 }
