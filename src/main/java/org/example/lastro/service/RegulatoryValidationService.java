@@ -24,6 +24,7 @@ public class RegulatoryValidationService {
     private static final BigDecimal MAX_ORDER_VALUE = new BigDecimal("100000000");
 
     private final PriceBandProperties priceBand;
+    private final MarketHaltService marketHaltService;
     private final boolean marketEnabled;
     private final boolean weekendTradingEnabled;
     private final LocalTime marketOpen;
@@ -31,11 +32,13 @@ public class RegulatoryValidationService {
 
     public RegulatoryValidationService(
             PriceBandProperties priceBand,
+            MarketHaltService marketHaltService,
             @Value("${lastro.market.enabled:true}") boolean marketEnabled,
             @Value("${lastro.market.weekend-trading-enabled:false}") boolean weekendTradingEnabled,
             @Value("${lastro.market.open:10:00}") String marketOpen,
             @Value("${lastro.market.close:18:00}") String marketClose) {
         this.priceBand = priceBand;
+        this.marketHaltService = marketHaltService;
         this.marketEnabled = marketEnabled;
         this.weekendTradingEnabled = weekendTradingEnabled;
         this.marketOpen = LocalTime.parse(marketOpen);
@@ -45,6 +48,7 @@ public class RegulatoryValidationService {
     public void validateOrder(String symbol, OrderSide side, OrderType type, 
                              BigDecimal price, int quantity, String accountId) {
         validateMarketHours();
+        validateNotHalted(symbol);
         validateQuantity(quantity);
         validatePrice(price, type);
         validatePriceBand(symbol, price, type);
@@ -53,6 +57,13 @@ public class RegulatoryValidationService {
         
         logger.info("Regulatory validation passed for order {} {} {} @ {} for account {}", 
             side, type, quantity, price, accountId);
+    }
+
+    private void validateNotHalted(String symbol) {
+        if (marketHaltService.isHalted(symbol)) {
+            throw new RegulatoryException(String.format("Trading halted for %s: %s",
+                symbol, marketHaltService.haltReason(symbol)));
+        }
     }
 
     private void validateMarketHours() {

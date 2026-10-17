@@ -150,6 +150,14 @@ curl http://localhost:8080/api/loadtest/metrics
 - `GET /api/trading/positions/{accountId}/{symbol}` - Obter posição
 - `GET /api/trading/positions/{accountId}/{symbol}/pnl?currentPrice=XX` - Obter PnL
 
+### Mercado
+
+- `POST /api/market/{symbol}/halt` - Pausar negociação do símbolo (body opcional: `{"reason": "circuit breaker"}`)
+- `POST /api/market/{symbol}/resume` - Retomar negociação do símbolo
+- `GET /api/market/halted` - Listar símbolos pausados
+
+Bandas de preço (limit up/down) configuráveis em `lastro.market.price-band.*` (ex.: `reference-prices[PETR4]=30.50`, `percent=10`); ordens fora da banda são rejeitadas.
+
 ### Contas
 
 - `POST /api/accounts` - Criar conta (body: `{"initialBalance": 1000.00}`)
