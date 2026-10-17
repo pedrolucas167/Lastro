@@ -6,6 +6,7 @@ import org.slf4j.LoggerFactory;
 import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentLinkedQueue;
@@ -40,35 +41,80 @@ public class MatchingEngine {
             OrderBook orderBook = getOrderBook(order.getSymbol());
             List<Trade> generatedTrades = new ArrayList<>();
 
-            if (order.getTimeInForce() == TimeInForce.FOK && !isFullyFillable(order, orderBook)) {
-                order.cancel();
-                logger.info("FOK order {} cancelled: liquidity insufficient for a full fill",
-                    order.getId());
-                return generatedTrades;
-            }
+            process(order, orderBook, generatedTrades);
 
-            match(order, orderBook, generatedTrades);
-
-            if (order.getRemainingQuantity() > 0) {
-                if (restsOnBook(order)) {
-                    orderBook.addOrder(order);
-                    logger.info("Order {} added to book with remaining quantity {}",
-                        order.getId(), order.getRemainingQuantity());
-                } else {
-                    order.cancel();
-                    logger.info("Order {} cancelled with remaining quantity {}",
-                        order.getId(), order.getRemainingQuantity());
-                }
-            } else {
-                logger.info("Order {} fully filled", order.getId());
-            }
-
-            if (!generatedTrades.isEmpty()) {
-                trades.addAll(generatedTrades);
-            }
+            recordTrades(generatedTrades);
             return generatedTrades;
         } finally {
             lock.unlock();
+        }
+    }
+
+    /**
+     * Substitui preco/quantidade de uma ordem em repouso. A ordem volta ao fim da fila
+     * (perde prioridade preco-tempo) e, se cruzar o book, executa imediatamente.
+     * Retorna vazio se a ordem nao existe, nao esta no book ou o amend for invalido.
+     */
+    public Optional<List<Trade>> replaceOrder(String orderId, String symbol,
+                                             BigDecimal newPrice, BigDecimal newQuantity) {
+        Lock lock = lockForSymbol(symbol);
+        lock.lock();
+        try {
+            OrderBook orderBook = orderBooks.get(symbol);
+            if (orderBook == null) {
+                return Optional.empty();
+            }
+
+            Optional<Order> resting = orderBook.removeById(orderId);
+            if (resting.isEmpty()) {
+                return Optional.empty();
+            }
+
+            Order order = resting.get();
+            if (!order.amend(newPrice, newQuantity)) {
+                orderBook.addOrder(order);
+                logger.info("Replace of order {} rejected: new quantity is below the filled quantity",
+                    orderId);
+                return Optional.empty();
+            }
+
+            List<Trade> generatedTrades = new ArrayList<>();
+            process(order, orderBook, generatedTrades);
+            recordTrades(generatedTrades);
+            return Optional.of(generatedTrades);
+        } finally {
+            lock.unlock();
+        }
+    }
+
+    private void process(Order order, OrderBook orderBook, List<Trade> generatedTrades) {
+        if (order.getTimeInForce() == TimeInForce.FOK && !isFullyFillable(order, orderBook)) {
+            order.cancel();
+            logger.info("FOK order {} cancelled: liquidity insufficient for a full fill",
+                order.getId());
+            return;
+        }
+
+        match(order, orderBook, generatedTrades);
+
+        if (order.getRemainingQuantity() > 0) {
+            if (restsOnBook(order)) {
+                orderBook.addOrder(order);
+                logger.info("Order {} added to book with remaining quantity {}",
+                    order.getId(), order.getRemainingQuantity());
+            } else {
+                order.cancel();
+                logger.info("Order {} cancelled with remaining quantity {}",
+                    order.getId(), order.getRemainingQuantity());
+            }
+        } else {
+            logger.info("Order {} fully filled", order.getId());
+        }
+    }
+
+    private void recordTrades(List<Trade> generatedTrades) {
+        if (!generatedTrades.isEmpty()) {
+            trades.addAll(generatedTrades);
         }
     }
 

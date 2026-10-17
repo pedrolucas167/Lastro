@@ -39,7 +39,20 @@ public class TradingController {
 
         Order order = result.order();
 
-        return ResponseEntity.ok(new OrderResponse(
+        return ResponseEntity.ok(toResponse(order));
+    }
+
+    @PostMapping("/orders/{orderId}/replace")
+    public ResponseEntity<OrderResponse> replaceOrder(@PathVariable String orderId,
+                                                     @RequestParam String symbol,
+                                                     @Valid @RequestBody ReplaceOrderRequest request) {
+        return tradingService.replaceOrder(orderId, symbol, request.getPrice(), request.getQuantity())
+            .map(result -> ResponseEntity.ok(toResponse(result.order())))
+            .orElseGet(() -> ResponseEntity.notFound().build());
+    }
+
+    private OrderResponse toResponse(Order order) {
+        return new OrderResponse(
             order.getId(),
             order.getSymbol(),
             order.getSide().name(),
@@ -50,7 +63,7 @@ public class TradingController {
             order.getRemainingQuantity(),
             order.getStatus().name(),
             order.getCreatedAt()
-        ));
+        );
     }
 
     private TimeInForce resolveTimeInForce(String value) {

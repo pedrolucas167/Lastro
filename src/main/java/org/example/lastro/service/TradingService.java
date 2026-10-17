@@ -8,6 +8,7 @@ import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
 import java.util.List;
+import java.util.Optional;
 
 @Service
 public class TradingService {
@@ -38,14 +39,44 @@ public class TradingService {
         List<Trade> trades = matchingEngine.submitOrder(order);
         
         if (!trades.isEmpty()) {
-            for (Trade trade : trades) {
-                positionService.processTrade(trade);
-                metricsCollector.recordTrade(trade);
-            }
+            applyTrades(trades);
             logger.info("Order {} generated {} trades", order.getId(), trades.size());
         }
         
         return new OrderExecutionResult(order, trades);
+    }
+
+    public Optional<OrderExecutionResult> replaceOrder(String orderId, String symbol,
+                                                      BigDecimal newPrice, Integer newQuantity) {
+        Order order = orderService.getOrder(orderId);
+        if (order == null) {
+            return Optional.empty();
+        }
+
+        BigDecimal price = newPrice != null ? newPrice : order.getPrice();
+        int quantity = newQuantity != null ? newQuantity : order.getOriginalQuantity().intValue();
+
+        regulatoryValidationService.validateOrder(symbol, order.getSide(), order.getType(),
+            price, quantity, order.getAccountId());
+
+        Optional<List<Trade>> generatedTrades =
+            matchingEngine.replaceOrder(orderId, symbol, price, new BigDecimal(quantity));
+        if (generatedTrades.isEmpty()) {
+            return Optional.empty();
+        }
+
+        List<Trade> trades = generatedTrades.get();
+        applyTrades(trades);
+        logger.info("Order {} replaced and generated {} trades", orderId, trades.size());
+
+        return Optional.of(new OrderExecutionResult(order, trades));
+    }
+
+    private void applyTrades(List<Trade> trades) {
+        for (Trade trade : trades) {
+            positionService.processTrade(trade);
+            metricsCollector.recordTrade(trade);
+        }
     }
 
     public boolean cancelOrder(String orderId, String symbol) {

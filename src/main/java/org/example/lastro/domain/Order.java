@@ -12,8 +12,8 @@ public class Order {
     private final String symbol;
     private final OrderSide side;
     private final OrderType type;
-    private final BigDecimal price;
-    private final BigDecimal originalQuantity;
+    private volatile BigDecimal price;
+    private volatile BigDecimal originalQuantity;
     private final AtomicInteger remainingQuantity;
     private final AtomicReference<OrderStatus> status;
     private final Instant createdAt;
@@ -122,5 +122,42 @@ public class Order {
         } finally {
             lock.unlock();
         }
+    }
+
+    /**
+     * Substitui preco e quantidade de uma ordem ainda em aberto, preservando o que ja foi
+     * executado. Retorna false se a ordem ja foi finalizada ou se a nova quantidade for
+     * menor que a quantidade executada.
+     */
+    public boolean amend(BigDecimal newPrice, BigDecimal newQuantity) {
+        lock.lock();
+        try {
+            if (status.get() == OrderStatus.FILLED
+                || status.get() == OrderStatus.CANCELLED
+                || status.get() == OrderStatus.REJECTED) {
+                return false;
+            }
+
+            int filledQuantity = originalQuantity.intValue() - remainingQuantity.get();
+            int newRemaining = newQuantity.intValue() - filledQuantity;
+            if (newRemaining < 0) {
+                return false;
+            }
+
+            this.price = newPrice;
+            this.originalQuantity = newQuantity;
+            this.remainingQuantity.set(newRemaining);
+            this.status.set(statusAfterAmend(newRemaining, filledQuantity));
+            return true;
+        } finally {
+            lock.unlock();
+        }
+    }
+
+    private OrderStatus statusAfterAmend(int remainingQuantity, int filledQuantity) {
+        if (remainingQuantity == 0) {
+            return OrderStatus.FILLED;
+        }
+        return filledQuantity > 0 ? OrderStatus.PARTIALLY_FILLED : OrderStatus.PENDING;
     }
 }
