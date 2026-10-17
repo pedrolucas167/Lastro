@@ -1,0 +1,13 @@
+package io.github.pedrolucas167.lastro.journal;
+
+import java.math.BigDecimal;
+import java.time.Instant;
+
+public record FundsDebited(String accountId, BigDecimal amount, Instant occurredAt)
+        implements MoneyEvent {
+
+    @Override
+    public String type() {
+        return "FundsDebited";
+    }
+}
