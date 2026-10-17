@@ -142,7 +142,8 @@ curl http://localhost:8080/api/loadtest/metrics
 
 ### Trading
 
-- `POST /api/trading/orders` - Criar ordem (body: `{"symbol": "PETR4", "side": "BUY", "type": "LIMIT", "price": 30.50, "quantity": 100, "accountId": "acc-1"}`)
+- `POST /api/trading/orders` - Criar ordem (body: `{"symbol": "PETR4", "side": "BUY", "type": "LIMIT", "price": 30.50, "quantity": 100, "accountId": "acc-1", "timeInForce": "GTC"}`; `timeInForce` opcional: `GTC` (padrão), `IOC`, `FOK`)
+- `POST /api/trading/orders/{orderId}/replace?symbol=PETR4` - Substituir preço/quantidade de uma ordem em repouso (body: `{"price": 10.50, "quantity": 200}`; campos opcionais)
 - `POST /api/trading/orders/{orderId}/cancel` - Cancelar ordem
 - `GET /api/trading/orderbook/{symbol}` - Obter book de ofertas
 - `GET /api/trading/trades` - Obter todos os trades
