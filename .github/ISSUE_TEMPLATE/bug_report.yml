@@ -1,0 +1,55 @@
+name: Bug
+description: Reportar um comportamento incorreto
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Obrigado por reportar! Preencha o máximo que puder.
+        Para **vulnerabilidades de segurança**, não use este template — veja o [SECURITY.md](https://github.com/pedrolucas167/Lastro/blob/main/SECURITY.md).
+
+  - type: textarea
+    id: descricao
+    attributes:
+      label: Descrição
+      description: O que aconteceu e o que você esperava que acontecesse.
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproducao
+    attributes:
+      label: Como reproduzir
+      placeholder: |
+        1. ...
+        2. ...
+        3. ...
+    validations:
+      required: true
+
+  - type: dropdown
+    id: ambiente
+    attributes:
+      label: Ambiente
+      options:
+        - Local (H2 embutido)
+        - Docker Compose (Postgres)
+        - CI
+    validations:
+      required: true
+
+  - type: input
+    id: versao
+    attributes:
+      label: Versão ou commit
+      placeholder: "v0.1.0, ou o SHA do commit"
+    validations:
+      required: false
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs / stack trace
+      render: shell
+    validations:
+      required: false
