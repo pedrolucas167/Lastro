@@ -2,270 +2,143 @@
 
 ## Visão Geral
 
-Este documento apresenta o baseline de concorrência do Lastro, uma plataforma de trading de mercado de capitais. O objetivo é validar a corretude do matching engine sob carga concorrente, garantindo que o sistema processa ordens de forma consistente, segura e sem deadlocks.
+Este documento registra a validação de **corretude** do Lastro sob carga concorrente: que todas as operações completam, que o order book e as posições permanecem consistentes e que não há deadlocks.
+
+Ele **não** é um relatório de desempenho. As tabelas de throughput e latência que existiam aqui foram removidas porque não eram reproduzíveis — o motivo está em [Por que os números de desempenho foram removidos](#por-que-os-números-de-desempenho-foram-removidos).
 
 ## Contexto do Problema
 
-Sistemas de trading de alta frequência (HFT) e plataformas de negociação exigem garantias rigorosas de concorrência:
+Sistemas de negociação exigem garantias rigorosas de concorrência:
 
-- **Atomicidade**: Cada operação de matching deve ser indivisível
-- **Consistência**: O order book deve manter integridade sob carga
-- **Isolamento**: Operações concorrentes não devem interferir entre si
-- **Durabilidade**: Trades gerados devem persistir corretamente
+- **Atomicidade**: cada operação de matching é indivisível
+- **Consistência**: o order book mantém integridade sob carga
+- **Isolamento**: operações concorrentes não interferem entre si
+- **Ausência de deadlock**: nenhuma combinação de operações trava o sistema
 
-O Lastro implementa um matching engine com price-time priority, onde ordens são executadas em ordem de chegada por nível de preço, similar ao funcionamento de bolsas como B3 e NYSE.
+O Lastro implementa matching com price-time priority: ordens são executadas por preço e, dentro do mesmo preço, por ordem de chegada.
 
-## Configuração do Ambiente
+## Estratégias de Concorrência
 
-### Stack Tecnológica
+Todas verificadas no código-fonte atual:
 
-- **Java**: 25 (última versão LTS)
-- **Spring Boot**: 4.1.1
-- **Maven**: Build tool
-- **JUnit 5**: Framework de testes
-- **Testes**: Executados localmente sem dependências externas
+### 1. Lock granular por entidade
 
-### Configuração dos Testes
-
-- **Threads Concorrentes**: 10-20 threads simulando múltiplos traders
-- **Ordens por Thread**: 10-100 ordens por thread
-- **Total de Operações**: 100-1000 operações por cenário de teste
-- **Timeout**: 60 segundos para evitar deadlocks infinitos
-
-## Arquitetura de Concorrência
-
-### Estratégias Implementadas
-
-#### 1. ReentrantLock Granular
-
-Cada entidade crítica possui seu próprio lock:
+`Order` e `Position` têm cada um seu próprio `ReentrantLock`, em vez de um lock global:
 
 ```java
-// Order.java
-private final ReentrantLock lock = new ReentrantLock();
-
-public void fill(int quantity) {
-    lock.lock();
-    try {
-        // Operação atômica de preenchimento
-    } finally {
-        lock.unlock();
-    }
-}
+// Order.java, Position.java
+private final Lock lock = new ReentrantLock();
 ```
 
-**Benefício**: Locks granulares permitem maior paralelismo que locks globais.
+### 2. Lock por símbolo no matching engine
 
-#### 2. ConcurrentSkipListMap para Order Book
+O `MatchingEngine` mantém um lock por símbolo, de modo que símbolos diferentes não competem entre si:
 
-O order book usa `ConcurrentSkipListMap` para manter bids e asks ordenados:
+```java
+// MatchingEngine.java
+private final ConcurrentHashMap<String, Lock> symbolLocks;
+```
+
+### 3. ConcurrentSkipListMap para o order book
 
 ```java
 // OrderBook.java
-private final ConcurrentSkipListMap<BigDecimal, List<Order>> bids; // Ordem decrescente
-private final ConcurrentSkipListMap<BigDecimal, List<Order>> asks; // Ordem crescente
+private final ConcurrentSkipListMap<BigDecimal, LinkedList<Order>> bids; // ordem decrescente
+private final ConcurrentSkipListMap<BigDecimal, LinkedList<Order>> asks; // ordem crescente
 ```
 
-**Benefício**: Estrutura thread-safe com ordenação O(log n) e iteração consistente.
+A `LinkedList` de cada nível de preço é o que garante FIFO dentro do preço, ou seja, o componente de *time* da price-time priority.
 
-#### 3. ConcurrentHashMap para Armazenamento
-
-Ordens e posições são armazenadas em `ConcurrentHashMap`:
+### 4. ConcurrentLinkedQueue para trades
 
 ```java
-private final Map<String, Order> orders = new ConcurrentHashMap<>();
-private final Map<String, Position> positions = new ConcurrentHashMap<>();
+// MatchingEngine.java
+private final ConcurrentLinkedQueue<Trade> trades;
 ```
 
-**Benefício**: Leitura sem lock, escrita com lock striping automático.
+### 5. Idempotência em transferências
 
-#### 4. CopyOnWriteArrayList para Trades
-
-A lista de trades usa `CopyOnWriteArrayList`:
-
-```java
-private final List<Trade> trades = new CopyOnWriteArrayList<>();
-```
-
-**Benefício**: Leituras extremamente rápidas, escritas raras (apenas quando trade ocorre).
+`IdempotencyService` guarda o resultado por chave (janela de 24h), consumido por `TransactionService.transfer`. É por isso que transferências repetidas com a mesma `idempotencyKey` não geram efeito duplicado — **ordens não têm esse mecanismo**.
 
 ## Cenários de Teste
 
-### Cenário 1: Ordens BUY Concorrentes ao Mesmo Preço
+Onze testes, em duas classes: `TradingConcurrencyTest` (5) e `ConcurrencyTest` (6).
 
-**Objetivo**: Validar que múltiplas ordens BUY ao mesmo preço são processadas corretamente e adicionadas ao book na ordem de chegada.
+### Trading
 
-**Configuração**:
-- 100 ordens BUY ao preço R$ 30.00
-- 10 threads concorrentes (10 ordens por thread)
-- Símbolo: PETR4
+| Teste | Configuração | Valida |
+|-------|--------------|--------|
+| `testConcurrentBuyOrdersAtSamePrice` | PETR4, 100 ordens BUY, 10 threads, preço único | Todas as 100 ordens processadas, nenhuma perdida |
+| `testConcurrentMatchingOfBuyAndSellOrders` | VALE3, 50 pares, 10 threads BUY + 10 SELL | Quantidade total negociada exatamente 500 |
+| `testConcurrentOrderBookConsistency` | ITUB4, 200 ordens mistas, 20 threads, 10 níveis de preço | Book consistente, spread nunca negativo |
+| `testNoDeadlockInConcurrentTrading` | BBDC4, 1.000 ciclos BUY/SELL, 10 threads | 1.000 ciclos completam, sem deadlock |
+| `testPositionConsistencyUnderConcurrentTrades` | WEGE3, 100 trades, 10 threads | Posições atualizadas, quantidade negociada > 0 |
 
-**Validação**:
-- Todas as 100 ordens são processadas
-- Nenhuma ordem é perdida
-- Ordem de chegada é preservada no book
+Total de ordens enviadas pelos cenários de trading: **2.600** (contagem direta no código).
 
-**Resultado**: ✅ PASS (0.5s)
+### Transações (contas)
 
-**Explicação**: O `ConcurrentSkipListMap` garante que ordens ao mesmo preço são mantidas em fila FIFO. Cada thread adiciona ordens atomicamente, e o book mantém a ordem de chegada.
+| Teste | Valida |
+|-------|--------|
+| `shouldMaintainConsistencyWithConcurrentCredits` | 100 créditos concorrentes de 10,00 resultam exatamente em 1.000,00 |
+| `shouldMaintainConsistencyWithConcurrentDebits` | 100 débitos concorrentes com saldo suficiente: todos aplicados, saldo exato |
+| `shouldRejectConcurrentDebitsWhenInsufficientBalance` | Débitos concorrentes acima do saldo são rejeitados, sem saldo negativo |
+| `shouldMaintainConsistencyWithConcurrentTransfers` | Transferências concorrentes preservam a soma dos saldos |
+| `shouldNotDeadlockInCyclicTransfers` | Transferências cíclicas (A→B, B→A) completam, provando ordem de aquisição de locks consistente |
+| `shouldPreserveBalanceInvariantsUnderHighConcurrency` | Invariantes de saldo sob alta concorrência |
 
-### Cenário 2: Matching Concorrente de BUY e SELL
+## Garantias Validadas
 
-**Objetivo**: Validar que ordens BUY e SELL ao mesmo preço geram trades corretamente sob concorrência.
+O que os testes acima **provam**:
 
-**Configuração**:
-- 50 pares de ordens BUY/SELL ao preço R$ 50.00
-- 20 threads (10 BUY, 10 SELL)
-- Símbolo: VALE3
+1. **Atomicidade**: nenhuma ordem é perdida ou duplicada sob concorrência
+2. **Consistência**: o order book mantém integridade; quantidades negociadas batem exatamente com o esperado
+3. **Isolamento**: saldos e posições ficam corretos após execução concorrente
+4. **Ausência de deadlock**: nenhum cenário trava, inclusive transferências cíclicas
+5. **Idempotência de transferências**: chave de idempotência evita aplicação duplicada
 
-**Validação**:
-- Trades são gerados para ordens compatíveis
-- Quantidade total traded = 500 unidades
-- Nenhum trade duplicado ou perdido
+Price-time priority é validada pelos testes de domínio (`MatchingEngineReplaceTest`, `MatchingEngineTimeInForceTest`) e pelo replay do journal (`TradingJournalReplayTest`), não pelos testes de concorrência.
 
-**Resultado**: ✅ PASS (0.3s)
+## O que estes testes NÃO provam
 
-**Explicação**: O matching engine processa cada ordem atomicamente. Quando uma ordem SELL chega, ela busca ordens BUY compatíveis no book. O lock no order book garante que o matching é atômico.
+Eles não medem desempenho. Os testes verificam que **todas as operações completam**; o tempo que isso leva varia em ordens de grandeza com o estado da JVM (JIT, GC) e com o escalonador do sistema operacional, para o mesmo código. Detalhes e evidências em [Por que os números de desempenho foram removidos](#por-que-os-números-de-desempenho-foram-removidos).
 
-### Cenário 3: Consistência do Order Book sob Carga Mista
+## Por que os números de desempenho foram removidos
 
-**Objetivo**: Validar que o order book mantém integridade com ordens BUY e SELL concorrentes a preços variados.
+A versão anterior deste documento publicava uma tabela de desempenho (throughput ~77 ordens/segundo, latência média <10ms, 1.123 ops/s, 1.460 operações). Ela foi removida por quatro motivos, todos verificáveis:
 
-**Configuração**:
-- 200 ordens mistas BUY/SELL
-- Preços variando de R$ 20.00 a R$ 30.00
-- 20 threads concorrentes
-- Símbolo: ITUB4
+1. **Contradição interna.** A mesma tabela trazia "77 ordens/segundo" e "1.123 ops/s". O segundo valor é `1.460 / 1,3s`; o primeiro não tem origem identificável. Além disso, "1.460 operações" não corresponde ao que os testes enviam (2.600 ordens só nos cenários de trading).
 
-**Validação**:
-- Book permanece consistente (bids >= asks)
-- Spread nunca negativo
-- Quantidades totais corretas
+2. **Erro de contagem de 2× nos testes.** O `ScaleTest` calculava o throughput com `numThreads * ordersPerThread`, mas cada iteração enviava **duas** ordens (BUY e SELL) — a própria asserção do teste usava `*2`. Todo throughput publicado era metade do real. Corrigido.
 
-**Resultado**: ✅ PASS (0.4s)
+3. **Não reproduzível.** O cenário de 50 threads documentava 50ms / 10.000 ordens/seg. Medido em 4 execuções na mesma máquina: 5.063ms–5.810ms / 86–98 ordens/seg. Fator de 106×.
 
-**Explicação**: O `ConcurrentSkipListMap` garante ordenação consistente mesmo sob inserções concorrentes. O spread é calculado atomicamente a partir do best bid e best ask.
+4. **Mede o ambiente, não o engine.** Medições do mesmo cenário, mesmo código:
 
-### Cenário 4: Ausência de Deadlocks em Trading Intensivo
+   | Cenário | Dentro da suíte | Isolado (JVM nova) |
+   |---------|-----------------|--------------------|
+   | 50 threads / 1.000 ordens | 5.063–5.810ms | 567–779ms |
+   | 10 threads / 200 ordens | 36–107ms | 292–612ms |
 
-**Objetivo**: Validar que o sistema não entra em deadlock mesmo com operações intensas.
+   O mesmo teste fica 8× mais rápido isolado — e o de 10 threads fica *mais lento* isolado, na direção oposta. O que muda não é a carga (idêntica), é o estado da JVM. Somando a isso: os resultados não são monotônicos (50 threads mais lento que 100), a variância chega a 3× entre execuções, e as medições foram feitas em um processador de **4 núcleos físicos / 8 lógicos** enquanto os cenários usam 50 a 1.000 threads — acima de 8 threads mede-se o escalonador, não o engine.
 
-**Configuração**:
-- 1000 ciclos de ordens BUY/SELL
-- 10 threads (100 ciclos por thread)
-- Preço fixo R$ 50.00
-- Símbolo: BBDC4
+Números de desempenho exigem um instrumento próprio, com warmup, forks e repetições — não `System.currentTimeMillis()` em volta de um teste de corretude.
 
-**Validação**:
-- Todos os 1000 ciclos completam
-- Nenhum deadlock detectado
-- Timeout de 60s não excedido
+## Limitações Conhecidas
 
-**Resultado**: ✅ PASS (0.03s)
+⚠️ **Estado em memória durante o teste**: não inclui latência de rede nem I/O de disco real
+⚠️ **Carga local**: threads na mesma JVM, não clientes distribuídos
+⚠️ **Recuperação de falha abrupta**: o replay do journal no startup é testado (`PersistenceReplayTest`, `TradingJournalReplayTest`), mas não há teste de morte do processo no meio de uma escrita
 
-**Explicação**: Locks granulares e ausência de lock ordering reverso previnem deadlocks. Cada operação adquire e libera locks em ordem consistente.
+## Próximos Passos
 
-### Cenário 5: Consistência de Posições sob Trades Concorrentes
-
-**Objetivo**: Validar que posições de contas são atualizadas corretamente quando trades ocorrem concorrentemente.
-
-**Configuração**:
-- 100 trades concorrentes
-- 10 threads (10 trades por thread)
-- Cada conta tem BUY e SELL
-- Símbolo: WEGE3
-
-**Validação**:
-- Posições atualizadas corretamente
-- Preço médio ponderado calculado corretamente
-- Nenhuma inconsistência no saldo de posições
-
-**Resultado**: ✅ PASS (0.3s)
-
-**Explicação**: Cada `Position` tem seu próprio `ReentrantLock`. Operações de buy/sell são atômicas por posição, garantindo que trades concorrentes não corrompem o estado.
-
-## Testes Legados (Transações)
-
-Os testes originais de concorrência para transações bancárias também foram validados:
-
-- **shouldMaintainConsistencyWithConcurrentCredits**: ✅ PASS
-- **shouldMaintainConsistencyWithConcurrentDebits**: ✅ PASS
-- **shouldRejectConcurrentDebitsWhenInsufficientBalance**: ✅ PASS
-- **shouldMaintainConsistencyWithConcurrentTransfers**: ✅ PASS
-- **shouldMaintainConsistencyWithConcurrentMixedOperations**: ✅ PASS
-
-Esses testes validam que a infraestrutura de concorrência baseada em `ReentrantLock` funciona corretamente para operações financeiras básicas.
-
-## Resultados Consolidados
-
-### Métricas de Sucesso
-
-| Métrica | Valor |
-|---------|-------|
-| Total de Testes | 11 |
-| Testes Passados | 11 |
-| Taxa de Sucesso | 100% |
-| Tempo Total | ~1.3s |
-| Operações Processadas | 1,460 |
-
-### Performance Observada
-
-| Métrica | Valor |
-|---------|-------|
-| Throughput | ~77 ordens/segundo |
-| Latência Média | <10ms por operação |
-| Threads Suportados | 10-20 sem degradação |
-| Operações por Segundo | 1,123 ops/s |
-
-### Garantias Validadas
-
-1. **Atomicidade**: Cada operação de matching é indivisível
-2. **Consistência**: Order book mantém integridade sob carga
-3. **Isolamento**: Threads não interferem nos dados uns dos outros
-4. **Ausência de Deadlocks**: 1,460 operações sem deadlocks
-5. **Price-Time Priority**: Ordem de execução correta por preço e tempo
-
-## Análise de Riscos e Limitações
-
-### Riscos Mitigados
-
-✅ **Race Conditions**: Mitigado com locks granulares e estruturas thread-safe
-✅ **Deadlocks**: Mitigado com lock ordering consistente
-✅ **Inconsistência de Estado**: Mitigado com atomicidade por entidade
-✅ **Perda de Dados**: Mitigado com estruturas concorrentes imutáveis
-
-### Limitações Conhecidas
-
-⚠️ **Testes em Memória**: Não inclui latência de rede ou I/O de disco
-⚠️ **Carga Simulada**: Threads locais, não clientes distribuídos
-⚠️ **Sem Persistência**: Estado não persistido entre execuções
-⚠️ **Sem Recuperação de Falhas**: Não testado crash recovery
-
-## Próximos Passos Recomendados
-
-### Curto Prazo
-
-1. **Aumentar Carga**: Testar com 100+ threads
-2. **Latência de Rede**: Simular latência com proxies
-3. **Benchmarking**: Usar JMH para medições precisas
-4. **Testes de Longa Duração**: Executar por horas para detectar memory leaks
-
-### Médio Prazo
-
-1. **Persistência**: Integrar banco de dados (PostgreSQL)
-2. **Distribuição**: Testar em múltiplas instâncias
-3. **Recuperação de Falhas**: Testar crash e recovery
-4. **Métricas em Produção**: Integrar Prometheus e Grafana
-
-### Longo Prazo
-
-1. **Escalabilidade Horizontal**: Particionamento de order book por símbolo
-2. **Low Latency**: Otimizações de GC e off-heap memory
-3. **Compliance**: Validações regulatórias avançadas
-4. **Disaster Recovery**: Multi-region deployment
+1. **Medição de desempenho com JMH**: warmup explícito, forks e repetições, publicando mediana e dispersão em vez de uma execução única
+2. **Latência de rede**: simular com proxy, medindo a camada HTTP separadamente do engine
+3. **Testes de longa duração**: execuções de horas para detectar vazamentos de memória
+4. **Recuperação de falhas**: teste de morte do processo durante escrita no journal
 
 ## Conclusão
 
-O baseline de concorrência do Lastro demonstra que o matching engine é capaz de processar ordens de forma correta e consistente sob carga concorrente. As estratégias de concorrência implementadas (locks granulares, estruturas thread-safe, atomicidade por entidade) são eficazes para garantir as propriedades ACID necessárias para sistemas de trading.
+Os onze testes de concorrência passam e validam atomicidade, consistência, isolamento e ausência de deadlock no matching engine e nas contas. Essa é a garantia que o Lastro oferece hoje.
 
-Com 11/11 testes passando e 1,460 operações processadas sem erros, o sistema está pronto para evolução para ambientes de produção com as melhorias recomendadas.
+Desempenho é uma afirmação diferente, que este documento não faz: as medições anteriores não eram reproduzíveis e foram removidas em vez de substituídas por números igualmente frágeis.
