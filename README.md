@@ -14,7 +14,7 @@ Plataforma de trading de mercado de capitais para testar concorrência e escalab
 O Lastro é uma plataforma de trading de mercado de capitais estruturada como um sistema real de engenharia de software:
 
 - **Arquitetura simples e clara**: Gerador de carga separado da API Spring Boot
-- **Métricas sistemáticas**: Throughput, latência p95, uso de CPU documentados em cada experimento
+- **Métricas instrumentadas**: throughput, latência p50/p95/p99 e uso de CPU coletados pelo próprio sistema (`/actuator/prometheus`, `/api/loadtest/metrics`)
 - **Sem over-engineering**: Nada de microserviços ou Kafka no Day 1
 - **Provar antes de escalar**: Primeiro provar concorrência correta no matching engine, depois descobrir o limite de escala
 - **Rigor de engenharia**: Testes abrangentes, logging estruturado, validações robustas, idempotência, CI/CD
@@ -95,24 +95,13 @@ src/test/java/io/github/pedrolucas167/lastro/
 
 #### Baseline de Concorrência
 
-Para detalhes completos sobre os testes de concorrência, resultados e métricas, consulte o documento [BASELINE_CONCURRENCY.md](./BASELINE_CONCURRENCY.md).
+Os 11 testes de concorrência (5 de trading, 6 de contas) validam que todas as operações completam sob carga concorrente, com contagem exata e sem deadlock. Garantias e cenários em [BASELINE_CONCURRENCY.md](./BASELINE_CONCURRENCY.md).
 
-**Resultados do Baseline**:
-- 11/11 testes de concorrência passando (100%)
-- 1,460 operações processadas sem erros
-- Throughput: ~77 ordens/segundo
-- Latência média: <10ms por operação
-- Zero deadlocks detectados
+O projeto **não publica throughput nem latência**: as medições anteriores não se reproduziam e foram removidas em vez de substituídas por números frágeis. O motivo, com as evidências, está em [BASELINE_CONCURRENCY.md](./BASELINE_CONCURRENCY.md#por-que-os-números-de-desempenho-foram-removidos).
 
-#### Análise de Escala
+#### Testes de Escala
 
-Para detalhes completos sobre testes de escala, limites identificados e gargalos, consulte o documento [SCALE_ANALYSIS.md](./SCALE_ANALYSIS.md).
-
-**Resultados da Análise de Escala**:
-- Escala sustentável: até 100 threads com throughput > 2000 ordens/seg
-- Gargalo primário: contenção de locks no matching engine acima de 200 threads
-- Gargalo secundário: gerenciamento de posições com 1000+ contas
-- Throughput máximo observado: 10,000 ordens/seg (50 threads)
+Seis cenários, de 10 a 1.000 threads e até 20.000 ordens, validam que o sistema completa sob carga concorrente. Eles medem corretude, não desempenho — detalhes em [SCALE_ANALYSIS.md](./SCALE_ANALYSIS.md).
 
 ## Como Executar
 
