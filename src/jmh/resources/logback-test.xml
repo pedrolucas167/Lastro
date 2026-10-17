@@ -1,0 +1,9 @@
+<!--
+  Medicao de desempenho com logging desligado.
+  O MatchingEngine e o OrderService logam em INFO a cada ordem e a cada trade;
+  com logging ativo o benchmark mediria o appender, nao o engine. Um numero de
+  producao precisa incluir esse custo, mas medido como uma coisa separada.
+-->
+<configuration>
+    <root level="OFF"/>
+</configuration>

@@ -22,8 +22,10 @@ import static org.junit.jupiter.api.Assertions.*;
 
 // Estes testes verificam que todas as ordens completam sob carga concorrente.
 // O tempo impresso e um sinal de fumaca, nao um benchmark: ele varia com o
-// estado da JVM (JIT, GC) e com o escalonador do sistema operacional. Medir
-// desempenho exige um instrumento proprio (JMH), nao o relogio deste teste.
+// estado da JVM (JIT, GC) e com o escalonador do sistema operacional, e o mesmo
+// cenario ja variou de 3,9s a 10,2s entre execucoes. Por isso o limite de
+// conclusao e o timeout do latch, nao uma assertiva de tempo. Medir desempenho
+// exige um instrumento proprio (JMH), nao o relogio deste teste.
 @Tag("slow")
 class ScaleTest {
     private MatchingEngine matchingEngine;
@@ -38,54 +40,47 @@ class ScaleTest {
     @Test
     @DisplayName("Teste de escala: 10 threads, 200 ordens")
     void testScale10Threads100Orders() throws InterruptedException {
-        runScenario(10, 10, 5_000);
+        runScenario(10, 10);
     }
 
     @Test
     @DisplayName("Teste de escala: 50 threads, 1000 ordens")
     void testScale50Threads500Orders() throws InterruptedException {
-        runScenario(50, 10, 10_000);
+        runScenario(50, 10);
     }
 
     @Test
     @DisplayName("Teste de escala: 100 threads, 2000 ordens")
     void testScale100Threads1000Orders() throws InterruptedException {
-        runScenario(100, 10, 20_000);
+        runScenario(100, 10);
     }
 
     @Test
     @DisplayName("Teste de escala: 200 threads, 4000 ordens")
     void testScale200Threads2000Orders() throws InterruptedException {
-        runScenario(200, 10, 30_000);
+        runScenario(200, 10);
     }
 
     @Test
     @DisplayName("Teste de escala com muitas contas: 100 contas, 2000 ordens")
     void testScaleWithManyAccounts() throws InterruptedException {
-        runScenarioWithManyAccounts(100, 10, 15_000);
+        runScenarioWithManyAccounts(100, 10);
     }
 
     @Test
     @DisplayName("Teste de escala com muitas contas: 1000 contas, 20000 ordens")
     void testScaleWithVeryManyAccounts() throws InterruptedException {
-        runScenarioWithManyAccounts(1_000, 10, 60_000);
+        runScenarioWithManyAccounts(1_000, 10);
     }
 
-    private void runScenario(int numThreads, int pairsPerThread, long maxDurationMs) throws InterruptedException {
-        int orders = numThreads * pairsPerThread * 2;
+    private void runScenario(int numThreads, int pairsPerThread) throws InterruptedException {
         long elapsed = runConcurrentOrders(numThreads, pairsPerThread);
-        report(numThreads + " threads", orders, elapsed);
-        assertTrue(elapsed < TimeUnit.MILLISECONDS.toNanos(maxDurationMs),
-            "Deve completar em menos de " + maxDurationMs + "ms");
+        report(numThreads + " threads", numThreads * pairsPerThread * 2, elapsed);
     }
 
-    private void runScenarioWithManyAccounts(int numAccounts, int pairsPerAccount, long maxDurationMs)
-            throws InterruptedException {
-        int orders = numAccounts * pairsPerAccount * 2;
+    private void runScenarioWithManyAccounts(int numAccounts, int pairsPerAccount) throws InterruptedException {
         long elapsed = runConcurrentOrdersWithManyAccounts(numAccounts, pairsPerAccount);
-        report(numAccounts + " contas", orders, elapsed);
-        assertTrue(elapsed < TimeUnit.MILLISECONDS.toNanos(maxDurationMs),
-            "Deve completar em menos de " + maxDurationMs + "ms");
+        report(numAccounts + " contas", numAccounts * pairsPerAccount * 2, elapsed);
     }
 
     private static void report(String scenario, int orders, long elapsedNanos) {

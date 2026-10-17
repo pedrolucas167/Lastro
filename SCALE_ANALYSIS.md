@@ -24,14 +24,14 @@ Os cenários 5 e 6 usam um pool de no máximo 100 threads (`Math.min(numAccounts
 ## O que os testes provam
 
 - Todas as ordens enviadas são processadas: cada cenário assere a contagem exata de operações concluídas
-- O sistema completa dentro de um limite de tempo generoso (5s a 60s), o que descarta travamento e deadlock
+- O sistema completa antes do timeout do latch (60s, ou 120s nos cenários com muitas contas), o que descarta travamento e deadlock
 - Contas distintas não corrompem o estado umas das outras
 
 Essas são propriedades de **corretude sob carga**, e elas se sustentam.
 
 ## O que os testes NÃO provam
 
-Não provam nada sobre desempenho. O `ScaleTest` mede o tempo com `System.currentTimeMillis()` em volta de um bloco que inclui criação de pool, espera e shutdown — sem warmup, sem repetição e com os seis cenários interferindo entre si na mesma JVM. O número que sai dali descreve o estado da JVM, não a capacidade do engine.
+Não provam nada sobre desempenho. O `ScaleTest` mede a janela de processamento, sem warmup, sem repetição e com os seis cenários interferindo entre si na mesma JVM. O número que sai dali descreve o estado da JVM, não a capacidade do engine.
 
 ## O que foi removido e por quê
 
@@ -39,10 +39,10 @@ Não provam nada sobre desempenho. O `ScaleTest` mede o tempo com `System.curren
 
 A versão anterior publicava tempos e throughputs por cenário (por exemplo: 50 threads → 50ms → 10.000 ordens/seg; 200 threads → 5.133ms → ~390 ordens/seg). Medições na mesma máquina, com o código atual:
 
-| Cenário | Publicado | Medido (4 execuções) |
-|---------|-----------|----------------------|
+| Cenário | Publicado | Medido (execuções na mesma máquina) |
+|---------|-----------|-------------------------------------|
 | 10 threads / 200 ordens | < 100ms | 36ms–107ms |
-| 50 threads / 1.000 ordens | **50ms** | **5.063ms–5.810ms** |
+| 50 threads / 1.000 ordens | **50ms** | **3.922ms–10.250ms** |
 | 100 threads / 2.000 ordens | < 500ms | 60ms–95ms |
 | 200 threads / 4.000 ordens | 5.133ms | 5.758ms–8.724ms |
 | 100 contas / 2.000 ordens | 701ms | 761ms–1.132ms |
@@ -52,9 +52,9 @@ Três problemas:
 
 1. **Contagem de ordens errada em 2×.** O throughput era calculado com `numThreads * ordersPerThread`, mas cada iteração envia BUY **e** SELL — a asserção do próprio teste usava `*2`. Todos os valores publicados eram metade do real. Corrigido.
 
-2. **Não reproduzível.** O cenário de 50 threads está 106× mais lento que o publicado, em execuções consistentes entre si.
+2. **Não reproduzível.** O cenário de 50 threads chega a ser **200× mais lento** que o publicado, e varia 2,6× entre execuções na mesma máquina.
 
-3. **Não monotônico e dependente do contexto.** 50 threads é consistentemente mais lento que 100 threads no mesmo caminho de código; e o mesmo cenário roda 8× mais rápido quando executado isolado em uma JVM nova (tabela em [BASELINE_CONCURRENCY.md](./BASELINE_CONCURRENCY.md#por-que-os-números-de-desempenho-foram-removidos)). O padrão acompanha o contexto de execução, não a carga. A causa não foi investigada aqui — investigá-la exige o instrumento do próximo passo.
+3. **Não monotônico e dependente do contexto.** 50 threads é consistentemente mais lento que 100 threads no mesmo caminho de código; e o mesmo cenário roda 8× mais rápido quando executado isolado em uma JVM nova (tabela em [BASELINE_CONCURRENCY.md](./BASELINE_CONCURRENCY.md#por-que-os-números-de-desempenho-foram-removidos)). O padrão acompanha o contexto de execução, não a carga. A causa não foi isolada; [PERFORMANCE.md](./PERFORMANCE.md) mede contenção por símbolo com JMH e mostra que adicionar threads **não** aumenta o throughput.
 
 ### A explicação também estava errada
 
@@ -73,10 +73,10 @@ Isso não significa que não exista limite de escala — significa que ele **nã
 
 ## Próximos Passos
 
-Medição com JMH: warmup explícito, forks isolados e múltiplas iterações, com warmup e reporte de mediana e dispersão. Só depois disso é possível afirmar qualquer coisa sobre desempenho — inclusive sobre como ele varia com o número de threads e com a contenção por símbolo, que é a pergunta que este documento tentava responder.
+A medição com JMH foi feita: [PERFORMANCE.md](./PERFORMANCE.md) traz o throughput do motor com 1 e 8 threads, com 1 e 8 símbolos. O resultado responde à pergunta que este documento tentava responder, e a resposta não é favorável — adicionar threads **não** aumenta o throughput. Investigar a causa exige profiling, não mais um benchmark.
 
 ## Conclusão
 
 O `ScaleTest` valida que o sistema completa sob carga concorrente de 10 a 1.000 threads, com contagem exata de operações e sem deadlock. Essa garantia é real e está coberta.
 
-Não há, hoje, nenhuma afirmação de desempenho sustentada por medição. Preferimos não publicar número a publicar número que não se reproduz.
+As afirmações de desempenho deste documento foram removidas por não se reproduzirem. As que existem agora vêm de medição com JMH e estão em [PERFORMANCE.md](./PERFORMANCE.md).
