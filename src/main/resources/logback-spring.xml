@@ -19,7 +19,7 @@
         </encoder>
     </appender>
 
-    <logger name="org.example.lastro" level="INFO"/>
+    <logger name="io.github.pedrolucas167.lastro" level="INFO"/>
     <logger name="org.springframework" level="WARN"/>
     <logger name="org.hibernate" level="WARN"/>
 

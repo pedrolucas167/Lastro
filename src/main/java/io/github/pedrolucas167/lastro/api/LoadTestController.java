@@ -1,0 +1,84 @@
+package io.github.pedrolucas167.lastro.api;
+
+import io.github.pedrolucas167.lastro.loadgenerator.LoadGenerator;
+import io.github.pedrolucas167.lastro.loadgenerator.LoadTestResult;
+import io.github.pedrolucas167.lastro.metrics.MetricSummary;
+import io.github.pedrolucas167.lastro.metrics.MetricsCollector;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.*;
+
+import java.util.List;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
+
+@RestController
+@RequestMapping("/api/loadtest")
+public class LoadTestController {
+    private final LoadGenerator loadGenerator;
+    private final MetricsCollector metricsCollector;
+
+    public LoadTestController(LoadGenerator loadGenerator, MetricsCollector metricsCollector) {
+        this.loadGenerator = loadGenerator;
+        this.metricsCollector = metricsCollector;
+    }
+
+    @PostMapping("/run")
+    public ResponseEntity<LoadTestReport> runLoadTest(
+            @RequestParam(defaultValue = "http://localhost:8080") String baseUrl,
+            @RequestParam(defaultValue = "10") int numAccounts,
+            @RequestParam(defaultValue = "1000") int numTransfers,
+            @RequestParam(defaultValue = "10") int concurrency,
+            @RequestParam(defaultValue = "100") int metricsIntervalMs) {
+
+        metricsCollector.clearSnapshots();
+
+        List<String> accountIds;
+        try {
+            accountIds = loadGenerator.createTestAccounts(baseUrl, numAccounts);
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(
+                new LoadTestReport(null, null, "Failed to create test accounts: " + e.getMessage())
+            );
+        }
+
+        ScheduledExecutorService scheduler = Executors.newScheduledThreadPool(1);
+        scheduler.scheduleAtFixedRate(() -> metricsCollector.collectSnapshot(), 
+            0, metricsIntervalMs, TimeUnit.MILLISECONDS);
+
+        LoadTestResult result;
+        try {
+            result = loadGenerator.runTransferLoadTest(baseUrl, accountIds, numTransfers, concurrency);
+        } finally {
+            scheduler.shutdown();
+        }
+
+        try {
+            scheduler.awaitTermination(1, TimeUnit.SECONDS);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
+
+        MetricSummary metricsSummary = metricsCollector.getSummary();
+
+        LoadTestReport report = new LoadTestReport(result, metricsSummary, null);
+        return ResponseEntity.ok(report);
+    }
+
+    @GetMapping("/metrics")
+    public ResponseEntity<MetricSummary> getMetricsSummary() {
+        return ResponseEntity.ok(metricsCollector.getSummary());
+    }
+
+    @PostMapping("/metrics/clear")
+    public ResponseEntity<Void> clearMetrics() {
+        metricsCollector.clearSnapshots();
+        return ResponseEntity.ok().build();
+    }
+
+    public record LoadTestReport(
+        LoadTestResult loadTestResult,
+        MetricSummary metricSummary,
+        String error
+    ) {}
+}

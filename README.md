@@ -50,7 +50,7 @@ O Lastro é uma plataforma de trading de mercado de capitais estruturada como um
 ## Estrutura do Projeto
 
 ```
-src/main/java/org/example/lastro/
+src/main/java/io/github/pedrolucas167/lastro/
 ├── api/              # Controllers REST
 ├── domain/           # Domínio de negócio (Order, OrderBook, Trade, Position)
 ├── service/          # Lógica de negócio
@@ -62,7 +62,7 @@ src/main/java/org/example/lastro/
 ├── config/           # Configurações (Logging, OpenAPI)
 └── LastroApplication.java
 
-src/test/java/org/example/lastro/
+src/test/java/io/github/pedrolucas167/lastro/
 ├── domain/           # Testes de domínio
 ├── service/          # Testes de services
 └── concurrency/      # Testes de concorrência

@@ -8,7 +8,7 @@ RUN mvn clean package -DskipTests
 # Runtime stage
 FROM eclipse-temurin:25-jre
 WORKDIR /app
-COPY --from=builder /app/target/Lastro-*.jar app.jar
+COPY --from=builder /app/target/lastro-*.jar app.jar
 
 # curl é usado pelo HEALTHCHECK abaixo
 RUN apt-get update \
