@@ -97,7 +97,15 @@ src/test/java/io/github/pedrolucas167/lastro/
 
 Os 11 testes de concorrência (5 de trading, 6 de contas) validam que todas as operações completam sob carga concorrente, com contagem exata e sem deadlock. Garantias e cenários em [BASELINE_CONCURRENCY.md](./BASELINE_CONCURRENCY.md).
 
-O projeto **não publica throughput nem latência**: as medições anteriores não se reproduziam e foram removidas em vez de substituídas por números frágeis. O motivo, com as evidências, está em [BASELINE_CONCURRENCY.md](./BASELINE_CONCURRENCY.md#por-que-os-números-de-desempenho-foram-removidos).
+#### Desempenho
+
+Medido com JMH, com warmup, forks e múltiplas iterações:
+
+- **Motor de matching**: ~818.000 ordens/segundo em uma thread (em memória, sem journal e sem logging)
+- **Caminho da API** (`createOrder`, com journal em memória): ~423.000 ordens/segundo
+- Adicionar threads **não** aumenta o throughput: 8 threads somam ~643.000 ordens/segundo, mesmo em símbolos distintos
+
+Metodologia, ambiente, comandos de reprodução e limitações — incluindo o fato de nenhum número incluir I/O durável — em [PERFORMANCE.md](./PERFORMANCE.md).
 
 #### Testes de Escala
 

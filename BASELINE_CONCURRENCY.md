@@ -111,18 +111,18 @@ A versão anterior deste documento publicava uma tabela de desempenho (throughpu
 
 2. **Erro de contagem de 2× nos testes.** O `ScaleTest` calculava o throughput com `numThreads * ordersPerThread`, mas cada iteração enviava **duas** ordens (BUY e SELL) — a própria asserção do teste usava `*2`. Todo throughput publicado era metade do real. Corrigido.
 
-3. **Não reproduzível.** O cenário de 50 threads documentava 50ms / 10.000 ordens/seg. Medido em 4 execuções na mesma máquina: 5.063ms–5.810ms / 86–98 ordens/seg. Fator de 106×.
+3. **Não reproduzível.** O cenário de 50 threads documentava 50ms / 10.000 ordens/seg. Medições na mesma máquina: **3.922ms–10.250ms** — fator de até **200×**, variando 2,6× entre execuções.
 
 4. **Mede o ambiente, não o engine.** Medições do mesmo cenário, mesmo código:
 
    | Cenário | Dentro da suíte | Isolado (JVM nova) |
    |---------|-----------------|--------------------|
-   | 50 threads / 1.000 ordens | 5.063–5.810ms | 567–779ms |
+   | 50 threads / 1.000 ordens | 3.922–10.250ms | 567–779ms |
    | 10 threads / 200 ordens | 36–107ms | 292–612ms |
 
-   O mesmo teste fica 8× mais rápido isolado — e o de 10 threads fica *mais lento* isolado, na direção oposta. O que muda não é a carga (idêntica), é o estado da JVM. Somando a isso: os resultados não são monotônicos (50 threads mais lento que 100), a variância chega a 3× entre execuções, e as medições foram feitas em um processador de **4 núcleos físicos / 8 lógicos** enquanto os cenários usam 50 a 1.000 threads — acima de 8 threads mede-se o escalonador, não o engine.
+   O mesmo teste fica entre 7× e 18× mais rápido isolado — e o de 10 threads fica *mais lento* isolado, na direção oposta. O que muda não é a carga (idêntica), é o estado da JVM. Somando a isso: os resultados não são monotônicos (50 threads mais lento que 100), a variância chega a 3× entre execuções, e as medições foram feitas em um processador de **4 núcleos físicos / 8 lógicos** enquanto os cenários usam 50 a 1.000 threads — acima de 8 threads mede-se o escalonador, não o engine.
 
-Números de desempenho exigem um instrumento próprio, com warmup, forks e repetições — não `System.currentTimeMillis()` em volta de um teste de corretude.
+Números de desempenho exigem um instrumento próprio, com warmup, forks e repetições — não o relógio de um teste de corretude. É o que [PERFORMANCE.md](./PERFORMANCE.md) faz.
 
 ## Limitações Conhecidas
 
@@ -132,13 +132,14 @@ Números de desempenho exigem um instrumento próprio, com warmup, forks e repet
 
 ## Próximos Passos
 
-1. **Medição de desempenho com JMH**: warmup explícito, forks e repetições, publicando mediana e dispersão em vez de uma execução única
-2. **Latência de rede**: simular com proxy, medindo a camada HTTP separadamente do engine
-3. **Testes de longa duração**: execuções de horas para detectar vazamentos de memória
-4. **Recuperação de falhas**: teste de morte do processo durante escrita no journal
+1. **Latência de rede**: simular com proxy, medindo a camada HTTP separadamente do engine
+2. **Testes de longa duração**: execuções de horas para detectar vazamentos de memória
+3. **Recuperação de falhas**: teste de morte do processo durante escrita no journal
+
+Medição de desempenho deixou de ser um próximo passo: foi feita com JMH e está em [PERFORMANCE.md](./PERFORMANCE.md).
 
 ## Conclusão
 
 Os onze testes de concorrência passam e validam atomicidade, consistência, isolamento e ausência de deadlock no matching engine e nas contas. Essa é a garantia que o Lastro oferece hoje.
 
-Desempenho é uma afirmação diferente, que este documento não faz: as medições anteriores não eram reproduzíveis e foram removidas em vez de substituídas por números igualmente frágeis.
+Desempenho é uma afirmação diferente, que este documento não faz: as medições anteriores não eram reproduzíveis e foram removidas em vez de substituídas por números igualmente frágeis. O que as substitui são medições com JMH, reproduzíveis, em [PERFORMANCE.md](./PERFORMANCE.md).
