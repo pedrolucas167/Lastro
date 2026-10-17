@@ -1,218 +1,134 @@
 # Lastro
 
-Plataforma de trading de mercado de capitais para testar concorrência e escalabilidade em matching engines, construída com rigor de nível institucional.
+**Matching engine de mercado de capitais em Java 25 + Spring Boot — simples, correto sob concorrência e durável.**
 
-## Filosofia
+Ordens, book de ofertas com price-time priority, matching engine, posições, contas e transferências. Tudo coberto por testes, medido com números reais e persistido em um journal append-only que sobrevive a reinícios.
 
-O Lastro é uma plataforma de trading de mercado de capitais estruturada como um sistema real de engenharia de software:
-
-- **Arquitetura simples e clara**: Gerador de carga separado da API Spring Boot
-- **Métricas sistemáticas**: Throughput, latência p95, uso de CPU documentados em cada experimento
-- **Sem over-engineering**: Nada de microserviços ou Kafka no Day 1
-- **Provar antes de escalar**: Primeiro provar concorrência correta no matching engine, depois descobrir o limite de escala
-- **Rigor de engenharia**: Testes abrangentes, logging estruturado, validações robustas, idempotência, CI/CD
-- **Foco em Mercado de Capitais**: Ordens, book de ofertas, price-time priority, matching engine, regulação
-
-## Arquitetura
-
-```
-┌─────────────────┐         ┌─────────────────┐
-│  Load Generator │────────▶│   Spring Boot   │
-│   (Separado)    │  HTTP   │      API        │
-└─────────────────┘         └─────────────────┘
-                                    │
-                                    ▼
-                           ┌─────────────────┐
-                           │ Metrics Collector│
-                           │  (CPU, Memória)  │
-                           └─────────────────┘
-```
-
-### Componentes
-
-- **API Spring Boot**: Gerencia ordens, book de ofertas e matching engine
-- **Load Generator**: Cliente HTTP que gera carga controlada de ordens
-- **Metrics Collector**: Coleta métricas de sistema durante os testes
-- **Order Book**: Book de ofertas com price-time priority
-- **Matching Engine**: Engine de matching de ordens buy/sell
-- **Idempotency Service**: Garante idempotência em operações de ordens
-- **Event Journal**: Persistência append-only de eventos de domínio, com replay no startup
-- **Actuator**: Health checks e métricas de produção (Prometheus)
-- **OpenAPI**: Documentação automática da API em Swagger UI
-
-## Estrutura do Projeto
-
-```
-src/main/java/org/example/lastro/
-├── api/              # Controllers REST
-├── domain/           # Domínio de negócio (Order, OrderBook, Trade, Position)
-├── service/          # Lógica de negócio
-├── loadgenerator/    # Gerador de carga separado
-├── metrics/          # Coleta de métricas
-├── journal/          # Journal append-only de eventos (persistência + auditoria)
-├── dto/              # Data Transfer Objects
-├── exception/        # Exceções customizadas
-├── config/           # Configurações (Logging, OpenAPI)
-└── LastroApplication.java
-
-src/test/java/org/example/lastro/
-├── domain/           # Testes de domínio
-├── service/          # Testes de services
-└── concurrency/      # Testes de concorrência
-```
-
-## Mercado de Capitais
-
-### Funcionalidades
-
-- **Ordens**: Buy/Sell, Limit/Market, Good-Till-Cancelled
-- **Order Book**: Book de ofertas com price-time priority
-- **Matching Engine**: Matching de ordens com FIFO por preço
-- **Trades**: Execuções com preço e quantidade
-- **Posições**: Tracking de posições e custódia
-- **Regulação**: Validações conforme CVM/SEC
-
-### Concorrência
-
-#### Estratégia
-
-- **ReentrantLock** em cada `Position` para garantir atomicidade
-- **ConcurrentSkipListMap** para order book thread-safe
-- **Lock stripping** para matching engine de alta performance
-
-#### Garantias
-
-- Ordens são processadas em ordem de chegada por preço
-- Matching é atômico por par de ordens
-- Sem inconsistências nas posições sob concorrência
-
-#### Baseline de Concorrência
-
-Para detalhes completos sobre os testes de concorrência, resultados e métricas, consulte o documento [BASELINE_CONCURRENCY.md](./BASELINE_CONCURRENCY.md).
-
-**Resultados do Baseline**:
-- 11/11 testes de concorrência passando (100%)
-- 1,460 operações processadas sem erros
-- Throughput: ~77 ordens/segundo
-- Latência média: <10ms por operação
-- Zero deadlocks detectados
-
-#### Análise de Escala
-
-Para detalhes completos sobre testes de escala, limites identificados e gargalos, consulte o documento [SCALE_ANALYSIS.md](./SCALE_ANALYSIS.md).
-
-**Resultados da Análise de Escala**:
-- Escala sustentável: até 100 threads com throughput > 2000 ordens/seg
-- Gargalo primário: contenção de locks no matching engine acima de 200 threads
-- Gargalo secundário: gerenciamento de posições com 1000+ contas
-- Throughput máximo observado: 10,000 ordens/seg (50 threads)
-
-## Como Executar
-
-### Pré-requisitos
-
-- Java 25
-- Maven 3.x
-- Docker (opcional: para Postgres via `docker compose`; sem ele a aplicação usa um H2 embutido em memória)
-
-### Iniciar a Aplicação
+## Comece em 30 segundos
 
 ```bash
 ./mvnw spring-boot:run
 ```
 
-A API estará disponível em `http://localhost:8080`
-
-### Persistência
-
-Cada movimento de dinheiro (conta aberta, crédito, débito, transferência) é registrado como um **evento imutável** em um **journal append-only**. No startup, o estado em memória é reconstruído a partir do journal — os dados sobrevivem a reinícios e o próprio journal serve como trilha de auditoria.
-
-- **Desenvolvimento/testes**: H2 embutido em memória, sem configuração.
-- **Produção/demo**: Postgres via Compose:
+API em `http://localhost:8080` · Swagger UI em `http://localhost:8080/swagger-ui.html`
 
 ```bash
-docker compose up --build
+# Gera carga: 10 contas, 1.000 transferências, 10 threads concorrentes
+curl -X POST "http://localhost:8080/api/loadtest/run?numAccounts=10&numTransfers=1000&concurrency=10"
+
+# Métricas coletadas (throughput, latência, CPU)
+curl "http://localhost:8080/api/loadtest/metrics"
 ```
 
-O Compose sobe o Postgres, aponta a aplicação para ele (`SPRING_DATASOURCE_*`) e aplica as migrações com Flyway na subida.
+Não precisa configurar banco: por padrão roda com um H2 em memória. Para Postgres durável, `docker compose up --build`.
 
-Para usar um Postgres próprio, defina `spring.datasource.url`, `spring.datasource.username` e `spring.datasource.password`.
+## O que tem dentro
 
-### Executar Load Test
+| Área | O que faz |
+|---|---|
+| **Matching engine** | Ordens LIMIT e MARKET; matching FIFO por preço (price-time priority) |
+| **Order book** | `ConcurrentSkipListMap` thread-safe: melhor bid/ask, spread e volume |
+| **Trades e posições** | Execuções com preço/quantidade; posição, preço médio e PnL por conta |
+| **Contas** | Saldo, crédito, débito e transferências com **idempotência** |
+| **Persistência** | Journal append-only de eventos + replay no startup (durabilidade e auditoria) |
+| **Observabilidade** | Actuator, métricas Prometheus, logs estruturados e Swagger/OpenAPI |
+
+## Correção sob concorrência
+
+Feito para provar que dá para ter um motor simples **e** correto sob carga:
+
+- Locks por `Position`, book concorrente e matching atômico por par de ordens
+- **11/11** testes de concorrência verdes · **1.460** operações sem erro · **0** deadlocks
+- Baseline: ~**77 ordens/s**, latência média < 10 ms
+
+Detalhes: [BASELINE_CONCURRENCY.md](./BASELINE_CONCURRENCY.md)
+
+## Escala
+
+O limite foi encontrado medindo, não por achismo:
+
+- Escala sustentável até **100 threads** com **> 2.000 ordens/s**
+- Pico de **10.000 ordens/s** (50 threads)
+- Gargalo: contenção de locks no matching engine acima de 200 threads
+
+Detalhes: [SCALE_ANALYSIS.md](./SCALE_ANALYSIS.md)
+
+## Durabilidade
+
+Cada movimento de dinheiro (conta aberta, crédito, débito, transferência) vira um **evento imutável** em um **journal append-only**. No startup, o estado é reconstruído a partir do journal — os dados sobrevivem a reinícios e o próprio journal é a **trilha de auditoria**.
+
+- **Dev/testes**: H2 embutido em memória, sem configuração.
+- **Produção**: Postgres via `docker compose up --build` (migrações com Flyway).
+
+## Arquitetura
+
+```
+┌────────────────┐   HTTP   ┌───────────────────────────────────┐
+│ Load Generator │─────────▶│          Spring Boot API          │
+│   (separado)   │          │ api · service · domain · journal  │
+└────────────────┘          └───────────────────────────────────┘
+```
+
+```
+src/main/java/org/example/lastro/
+├── api/            # Controllers REST
+├── domain/         # Order, OrderBook, MatchingEngine, Trade, Position, Account
+├── service/        # Regras de negócio e orquestração
+├── journal/        # Eventos, EventStore e replay (persistência + auditoria)
+├── loadgenerator/  # Gerador de carga separado da API
+├── metrics/        # Coleta de métricas de sistema
+├── dto/ · exception/ · config/
+└── LastroApplication.java
+```
+
+## API
+
+| Método | Endpoint | Descrição |
+|---|---|---|
+| `POST` | `/api/trading/orders` | Envia ordem |
+| `POST` | `/api/trading/orders/{id}/cancel` | Cancela ordem |
+| `GET` | `/api/trading/orderbook/{symbol}` | Book: melhor bid/ask, spread e volume |
+| `GET` | `/api/trading/trades?symbol=` | Trades (todos ou por símbolo) |
+| `GET` | `/api/trading/positions/{accountId}/{symbol}` | Posição e preço médio |
+| `GET` | `/api/trading/positions/{accountId}/{symbol}/pnl?currentPrice=` | PnL |
+| `POST` | `/api/accounts` | Cria conta |
+| `GET` | `/api/accounts/{id}` | Consulta conta |
+| `POST` | `/api/accounts/{id}/credit` · `/debit` | Crédito / débito |
+| `POST` | `/api/transactions/transfer` | Transferência (`idempotencyKey` opcional) |
+| `GET` | `/api/transactions/{id}` | Consulta transação |
+| `POST` | `/api/loadtest/run` | Executa load test |
+| `GET` | `/api/loadtest/metrics` | Métricas do load test |
+| `GET` | `/actuator/health` · `/actuator/prometheus` | Health e métricas |
+
+Documentação interativa em `/swagger-ui.html`. Exemplo de ordem:
+
+```json
+{ "symbol": "PETR4", "side": "BUY", "type": "LIMIT", "price": 30.50, "quantity": 100, "accountId": "<accountId>" }
+```
+
+## Testes
 
 ```bash
-curl -X POST "http://localhost:8080/api/loadtest/run?numAccounts=10&numTransfers=1000&concurrency=10&metricsIntervalMs=100"
+./mvnw test
 ```
 
-Parâmetros:
-- `numAccounts`: Número de contas a criar (padrão: 10)
-- `numTransfers`: Número de transferências a executar (padrão: 1000)
-- `concurrency`: Nível de concorrência (padrão: 10)
-- `metricsIntervalMs`: Intervalo de coleta de métricas em ms (padrão: 100)
-
-### Ver Métricas
-
-```bash
-curl http://localhost:8080/api/loadtest/metrics
-```
-
-## API Endpoints
-
-### Trading
-
-- `POST /api/trading/orders` - Criar ordem (body: `{"symbol": "PETR4", "side": "BUY", "type": "LIMIT", "price": 30.50, "quantity": 100, "accountId": "acc-1"}`)
-- `POST /api/trading/orders/{orderId}/cancel` - Cancelar ordem
-- `GET /api/trading/orderbook/{symbol}` - Obter book de ofertas
-- `GET /api/trading/trades` - Obter todos os trades
-- `GET /api/trading/trades?symbol=XXX` - Obter trades por símbolo
-- `GET /api/trading/positions/{accountId}/{symbol}` - Obter posição
-- `GET /api/trading/positions/{accountId}/{symbol}/pnl?currentPrice=XX` - Obter PnL
-
-### Contas
-
-- `POST /api/accounts` - Criar conta (body: `{"initialBalance": 1000.00}`)
-- `GET /api/accounts/{id}` - Buscar conta
-- `POST /api/accounts/{id}/credit` - Creditar valor (body: `{"amount": 100.00}`)
-- `POST /api/accounts/{id}/debit` - Debitar valor (body: `{"amount": 100.00}`)
-
-### Transações
-
-- `POST /api/transactions/transfer` - Transferir entre contas (body: `{"fromAccountId": "x", "toAccountId": "y", "amount": 100.00, "idempotencyKey": "optional"}`)
-- `GET /api/transactions/{id}` - Buscar transação
-
-### Load Tests
-
-- `POST /api/loadtest/run` - Executar load test
-- `GET /api/loadtest/metrics` - Obter métricas
-- `POST /api/loadtest/metrics/clear` - Limpar métricas
-
-### Health & Metrics
-
-- `GET /actuator/health` - Health check
-- `GET /actuator/metrics` - Métricas JVM
-- `GET /actuator/prometheus` - Métricas Prometheus
-- `GET /swagger-ui.html` - Documentação Swagger UI
-- `GET /v3/api-docs` - Especificação OpenAPI
+Cobre domínio, serviços, concorrência, replay da persistência e um round-trip real em **Postgres via Testcontainers**. O CI roda em todo PR e no `main`; o workflow de Docker valida a imagem.
 
 ## Roadmap
 
-### Fase 1: Corretude (Atual)
-- [x] Implementar domínio com locks
-- [x] Criar load generator separado
-- [x] Implementar coleta de métricas
-- [x] Executar baseline de concorrência
-- [x] Validar corretude sob concorrência
+Feito:
 
-### Fase 2: Escala
-- [x] Identificar limite de escala
-- [x] Testar diferentes níveis de concorrência
-- [x] Testar com diferentes números de contas
-- [x] Documentar pontos de gargalo
+- [x] Matching engine com price-time priority e concorrência correta
+- [x] Baseline de concorrência e análise de escala
+- [x] Journal append-only + replay (contas e transações)
 
-### Fase 3: Otimização (se necessário)
-- [ ] Avaliar necessidade de cache
-- [ ] Avaliar necessidade de pool de conexões
-- [ ] Considerar arquitetura distribuída (apenas se necessário)
+Próximo:
+
+- [ ] Journal do engine (ordens, trades e posições)
+- [ ] Autenticação e autorização (API keys)
+- [ ] Trilha de auditoria imutável, idempotência de ordens e ledger de dupla entrada
+- [ ] Risco pré-trade: limites de posição/exposição e kill switch
+- [ ] Market data via WebSocket
 
 ## Licença
 
