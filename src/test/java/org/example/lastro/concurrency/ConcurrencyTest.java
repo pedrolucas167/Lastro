@@ -1,6 +1,8 @@
 package org.example.lastro.concurrency;
 
 import org.example.lastro.domain.Account;
+import org.example.lastro.journal.EventStore;
+import org.example.lastro.journal.InMemoryEventStore;
 import org.example.lastro.service.AccountService;
 import org.example.lastro.service.IdempotencyService;
 import org.example.lastro.service.TransactionService;
@@ -22,9 +24,10 @@ class ConcurrencyTest {
 
     @BeforeEach
     void setUp() {
-        accountService = new AccountService();
+        EventStore eventStore = new InMemoryEventStore();
+        accountService = new AccountService(eventStore);
         IdempotencyService idempotencyService = new IdempotencyService();
-        transactionService = new TransactionService(accountService, idempotencyService);
+        transactionService = new TransactionService(accountService, idempotencyService, eventStore);
     }
 
     @Test

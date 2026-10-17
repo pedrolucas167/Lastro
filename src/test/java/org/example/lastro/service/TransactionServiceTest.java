@@ -5,6 +5,8 @@ import org.example.lastro.domain.Transaction;
 import org.example.lastro.domain.TransactionStatus;
 import org.example.lastro.domain.TransactionType;
 import org.example.lastro.exception.TransactionFailedException;
+import org.example.lastro.journal.EventStore;
+import org.example.lastro.journal.InMemoryEventStore;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.DisplayName;
@@ -21,9 +23,10 @@ class TransactionServiceTest {
 
     @BeforeEach
     void setUp() {
-        accountService = new AccountService();
+        EventStore eventStore = new InMemoryEventStore();
+        accountService = new AccountService(eventStore);
         IdempotencyService idempotencyService = new IdempotencyService();
-        transactionService = new TransactionService(accountService, idempotencyService);
+        transactionService = new TransactionService(accountService, idempotencyService, eventStore);
         
         fromAccount = accountService.createAccount(new BigDecimal("1000.00"));
         toAccount = accountService.createAccount(new BigDecimal("500.00"));

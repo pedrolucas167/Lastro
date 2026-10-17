@@ -36,6 +36,7 @@ O Lastro é uma plataforma de trading de mercado de capitais estruturada como um
 - **Order Book**: Book de ofertas com price-time priority
 - **Matching Engine**: Engine de matching de ordens buy/sell
 - **Idempotency Service**: Garante idempotência em operações de ordens
+- **Event Journal**: Persistência append-only de eventos de domínio, com replay no startup
 - **Actuator**: Health checks e métricas de produção (Prometheus)
 - **OpenAPI**: Documentação automática da API em Swagger UI
 
@@ -48,6 +49,7 @@ src/main/java/org/example/lastro/
 ├── service/          # Lógica de negócio
 ├── loadgenerator/    # Gerador de carga separado
 ├── metrics/          # Coleta de métricas
+├── journal/          # Journal append-only de eventos (persistência + auditoria)
 ├── dto/              # Data Transfer Objects
 ├── exception/        # Exceções customizadas
 ├── config/           # Configurações (Logging, OpenAPI)
@@ -111,6 +113,7 @@ Para detalhes completos sobre testes de escala, limites identificados e gargalos
 
 - Java 25
 - Maven 3.x
+- Docker (opcional: para Postgres via `docker compose`; sem ele a aplicação usa um H2 embutido em memória)
 
 ### Iniciar a Aplicação
 
@@ -119,6 +122,21 @@ Para detalhes completos sobre testes de escala, limites identificados e gargalos
 ```
 
 A API estará disponível em `http://localhost:8080`
+
+### Persistência
+
+Cada movimento de dinheiro (conta aberta, crédito, débito, transferência) é registrado como um **evento imutável** em um **journal append-only**. No startup, o estado em memória é reconstruído a partir do journal — os dados sobrevivem a reinícios e o próprio journal serve como trilha de auditoria.
+
+- **Desenvolvimento/testes**: H2 embutido em memória, sem configuração.
+- **Produção/demo**: Postgres via Compose:
+
+```bash
+docker compose up --build
+```
+
+O Compose sobe o Postgres, aponta a aplicação para ele (`SPRING_DATASOURCE_*`) e aplica as migrações com Flyway na subida.
+
+Para usar um Postgres próprio, defina `spring.datasource.url`, `spring.datasource.username` e `spring.datasource.password`.
 
 ### Executar Load Test
 

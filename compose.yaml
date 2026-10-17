@@ -1,15 +1,42 @@
 services:
+  postgres:
+    image: postgres:17-alpine
+    container_name: lastro-postgres
+    environment:
+      POSTGRES_DB: lastro
+      POSTGRES_USER: lastro
+      POSTGRES_PASSWORD: lastro
+    ports:
+      - "5432:5432"
+    volumes:
+      - lastro-postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U lastro"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
   lastro:
     build:
       context: .
       dockerfile: Dockerfile
     image: lastro:latest
     container_name: lastro
+    depends_on:
+      postgres:
+        condition: service_healthy
     ports:
       - "8080:8080"
     environment:
       # Fuso horário usado pela validação de horário de mercado (10:00-18:00).
       TZ: America/Sao_Paulo
+      # Journal durável no Postgres.
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/lastro
+      SPRING_DATASOURCE_USERNAME: lastro
+      SPRING_DATASOURCE_PASSWORD: lastro
       # Descomente para permitir ordens fora do horário de mercado (demos/testes):
       # LASTRO_MARKET_ENABLED: "false"
     restart: unless-stopped
+
+volumes:
+  lastro-postgres:
