@@ -1,0 +1,75 @@
+name: Release
+
+# Publica a imagem no GHCR quando uma tag v* e enviada e cria a release no GitHub.
+# workflow_dispatch roda o build (sem push) para validar o pipeline.
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+  packages: write
+
+jobs:
+  publish-image:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Log in to GHCR
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+
+      # Tag v0.1.0 -> imagem 0.1.0
+      - name: Compute version
+        id: version
+        run: echo "value=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Build and push
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          # Em tag publica; em workflow_dispatch so builda (valida o pipeline).
+          push: ${{ startsWith(github.ref, 'refs/tags/v') }}
+          platforms: linux/amd64,linux/arm64
+          tags: |
+            ghcr.io/pedrolucas167/lastro:${{ steps.version.outputs.value }}
+            ghcr.io/pedrolucas167/lastro:latest
+          labels: |
+            org.opencontainers.image.title=Lastro
+            org.opencontainers.image.description=Plataforma de trading de mercado de capitais: matching engine, order book e journal append-only
+            org.opencontainers.image.source=https://github.com/pedrolucas167/Lastro
+            org.opencontainers.image.licenses=Apache-2.0
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  github-release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: publish-image
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            echo "Release $GITHUB_REF_NAME ja existe; nada a fazer."
+          else
+            gh release create "$GITHUB_REF_NAME" --generate-notes --title "$GITHUB_REF_NAME"
+          fi
