@@ -42,7 +42,7 @@ O Lastro é uma plataforma de trading de mercado de capitais estruturada como um
 - **Metrics Collector**: Coleta métricas de sistema durante os testes
 - **Order Book**: Book de ofertas com price-time priority
 - **Matching Engine**: Engine de matching de ordens buy/sell
-- **Idempotency Service**: Garante idempotência em operações de ordens
+- **Idempotency Service**: Garante idempotência em transferências entre contas (janela de 24h)
 - **Event Journal**: Persistência append-only de eventos de domínio, com replay no startup
 - **Actuator**: Health checks e métricas de produção (Prometheus)
 - **OpenAPI**: Documentação automática da API em Swagger UI
@@ -72,12 +72,12 @@ src/test/java/io/github/pedrolucas167/lastro/
 
 ### Funcionalidades
 
-- **Ordens**: Buy/Sell, Limit/Market, Good-Till-Cancelled
+- **Ordens**: Buy/Sell, Limit/Market, time-in-force GTC/IOC/FOK e cancel-replace (amend)
 - **Order Book**: Book de ofertas com price-time priority
 - **Matching Engine**: Matching de ordens com FIFO por preço
 - **Trades**: Execuções com preço e quantidade
-- **Posições**: Tracking de posições e custódia
-- **Regulação**: Validações conforme CVM/SEC
+- **Posições**: Tracking de posições e PnL por conta/símbolo
+- **Regulação**: Validações de pré-negociação (janela de negociação, bandas de preço, limites de quantidade/preço/valor e formato do símbolo)
 
 ### Concorrência
 
