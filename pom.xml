@@ -12,19 +12,26 @@
     <artifactId>Lastro</artifactId>
     <version>0.0.1-SNAPSHOT</version>
     <name>Lastro</name>
-    <description>Lastro</description>
-    <url/>
+    <description>Plataforma de trading de mercado de capitais: order book com price-time priority, matching engine, journal append-only com replay e controles regulatorios</description>
+    <url>https://github.com/pedrolucas167/Lastro</url>
     <licenses>
-        <license/>
+        <license>
+            <name>Apache License, Version 2.0</name>
+            <url>https://www.apache.org/licenses/LICENSE-2.0</url>
+            <distribution>repo</distribution>
+        </license>
     </licenses>
     <developers>
-        <developer/>
+        <developer>
+            <id>pedrolucas167</id>
+            <name>Pedro Lucas</name>
+            <url>https://github.com/pedrolucas167</url>
+        </developer>
     </developers>
     <scm>
-        <connection/>
-        <developerConnection/>
-        <tag/>
-        <url/>
+        <connection>scm:git:https://github.com/pedrolucas167/Lastro.git</connection>
+        <developerConnection>scm:git:ssh://git@github.com/pedrolucas167/Lastro.git</developerConnection>
+        <url>https://github.com/pedrolucas167/Lastro</url>
     </scm>
     <properties>
         <java.version>25</java.version>

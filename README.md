@@ -1,5 +1,12 @@
 # Lastro
 
+[![CI](https://github.com/pedrolucas167/Lastro/actions/workflows/ci.yml/badge.svg)](https://github.com/pedrolucas167/Lastro/actions/workflows/ci.yml)
+[![Docker](https://github.com/pedrolucas167/Lastro/actions/workflows/docker.yml/badge.svg)](https://github.com/pedrolucas167/Lastro/actions/workflows/docker.yml)
+[![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](./LICENSE)
+[![Java](https://img.shields.io/badge/Java-25-orange.svg)](https://openjdk.org/projects/jdk/25/)
+
+> **Status: experimental (v0.x).** O núcleo de matching é correto sob concorrência e durável via journal + replay, mas isto **não é production-ready**: a API ainda não tem autenticação, e não há conectividade de mercado (feed/FIX) nem clearing/settlement. Use por sua conta e risco.
+
 Plataforma de trading de mercado de capitais para testar concorrência e escalabilidade em matching engines, construída com rigor de nível institucional.
 
 ## Filosofia
@@ -217,4 +224,4 @@ curl http://localhost:8080/api/loadtest/metrics
 
 ## Licença
 
-MIT
+[Apache License 2.0](./LICENSE) © 2026 Pedro Lucas
