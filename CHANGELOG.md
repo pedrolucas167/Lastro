@@ -8,6 +8,10 @@ O formato segue [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/) e o 
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-10-18
+
+Segunda versão pública: autenticação, autorização por papel e o halt/circuit breaker durável. **Quebra de compatibilidade** para quem chamava a API da v0.1.0 sem token (ver Alterado).
+
 ### Adicionado
 
 - Benchmark JMH para throughput do motor de matching e do caminho de aplicação, sob o perfil `-Pbenchmark`, com resultados e metodologia em `PERFORMANCE.md`.
@@ -25,6 +29,7 @@ O formato segue [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/) e o 
 
 ### Alterado
 
+- **Quebra de compatibilidade:** a API passou a exigir um JWT do Keycloak em todas as rotas (exceto `GET /actuator/health`) e a autorizar por papel. Cliente que chamava a v0.1.0 sem token recebe `401`; o load test deixa de funcionar só com a URL e passa a exigir o cliente M2M configurado (`LASTRO_LOADTEST_TOKEN_URI`, `LASTRO_LOADTEST_CLIENT_ID`, `LASTRO_LOADTEST_CLIENT_SECRET`).
 - Os números de desempenho do README, de `BASELINE_CONCURRENCY.md` e de `SCALE_ANALYSIS.md` foram removidos por não serem reproduzíveis (o cenário de 50 threads divergia 106×) e substituídos por medições JMH.
 - `SCALE_ANALYSIS.md` passa a descrever o que os testes de escala validam — corretude sob carga — em vez de uma curva de escala e um diagnóstico de gargalos que o código não sustentava.
 - O load generator deixa de chamar a API sem credenciais: autentica como cliente M2M (client credentials) com a service account do Keycloak.

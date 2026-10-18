@@ -64,12 +64,32 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v7
 
+      # O corpo da release e a secao do CHANGELOG da versao (nao a lista de commits):
+      # e onde a quebra de compatibilidade e os destaques ficam explicados.
+      - name: Extract release notes from CHANGELOG
+        run: |
+          awk -v v="${GITHUB_REF_NAME#v}" '
+            BEGIN { header = "## [" v "]" }
+            index($0, header) == 1 { found = 1; next }
+            found && index($0, "## [") == 1 { exit }
+            found { print }
+          ' CHANGELOG.md > RELEASE_NOTES.md
+          if [ -s RELEASE_NOTES.md ]; then
+            echo "Notas extraidas do CHANGELOG ($(wc -l < RELEASE_NOTES.md) linhas)."
+          else
+            echo "Sem secao no CHANGELOG para ${GITHUB_REF_NAME#v}; a release usara as notas geradas."
+          fi
+
       - name: Create GitHub release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
             echo "Release $GITHUB_REF_NAME ja existe; nada a fazer."
+            exit 0
+          fi
+          if [ -s RELEASE_NOTES.md ]; then
+            gh release create "$GITHUB_REF_NAME" --notes-file RELEASE_NOTES.md --title "$GITHUB_REF_NAME"
           else
             gh release create "$GITHUB_REF_NAME" --generate-notes --title "$GITHUB_REF_NAME"
           fi
