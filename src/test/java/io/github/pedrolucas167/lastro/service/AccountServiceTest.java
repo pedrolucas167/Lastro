@@ -1,6 +1,9 @@
 package io.github.pedrolucas167.lastro.service;
 
 import io.github.pedrolucas167.lastro.domain.Account;
+import io.github.pedrolucas167.lastro.domain.Actor;
+import io.github.pedrolucas167.lastro.exception.AccountAccessDeniedException;
+import io.github.pedrolucas167.lastro.exception.AccountAlreadyHasHolderException;
 import io.github.pedrolucas167.lastro.exception.AccountNotFoundException;
 import io.github.pedrolucas167.lastro.exception.InsufficientFundsException;
 import io.github.pedrolucas167.lastro.journal.InMemoryEventStore;
@@ -9,6 +12,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.DisplayName;
 
 import java.math.BigDecimal;
+import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -95,5 +99,79 @@ class AccountServiceTest {
             InsufficientFundsException.class,
             () -> accountService.debit(account.getId(), new BigDecimal("200.00"))
         );
+    }
+
+    @Test
+    @DisplayName("Deve criar conta com titular")
+    void shouldCreateAccountWithHolder() {
+        Account account = accountService.createAccount(new BigDecimal("100.00"), "cliente-1");
+
+        assertEquals("cliente-1", account.getHolder());
+        assertTrue(account.heldBy("cliente-1"));
+        assertFalse(account.heldBy("cliente-2"));
+    }
+
+    @Test
+    @DisplayName("Deve dar titular a uma conta sem titular")
+    void shouldAssignHolderToAccountWithoutOne() {
+        Account account = accountService.createAccount(new BigDecimal("100.00"));
+
+        Account assigned = accountService.assignHolder(account.getId(), "cliente-1");
+
+        assertEquals("cliente-1", assigned.getHolder());
+        assertTrue(accountService.accountsOf("cliente-1").stream().anyMatch(it -> it.getId().equals(account.getId())));
+    }
+
+    @Test
+    @DisplayName("Não deve trocar o titular de uma conta que já tem")
+    void shouldRefuseToReplaceHolder() {
+        Account account = accountService.createAccount(new BigDecimal("100.00"), "cliente-1");
+
+        assertThrows(
+            AccountAlreadyHasHolderException.class,
+            () -> accountService.assignHolder(account.getId(), "cliente-2")
+        );
+        assertEquals("cliente-1", accountService.getAccount(account.getId()).getHolder());
+    }
+
+    @Test
+    @DisplayName("Deve lançar exceção ao dar titular a conta inexistente")
+    void shouldThrowExceptionWhenAssigningHolderToNonExistentAccount() {
+        assertThrows(
+            AccountNotFoundException.class,
+            () -> accountService.assignHolder("non-existent", "cliente-1")
+        );
+    }
+
+    @Test
+    @DisplayName("O titular só acessa a própria conta; o back office acessa qualquer uma")
+    void shouldEnforceAccountAccess() {
+        Account mine = accountService.createAccount(new BigDecimal("100.00"), "cliente-1");
+        Account other = accountService.createAccount(new BigDecimal("100.00"), "cliente-2");
+        Actor holder = new Actor("cliente-1", false);
+
+        assertEquals(mine.getId(), accountService.getAccountFor(holder, mine.getId()).getId());
+        assertTrue(accountService.canAccess(holder, mine.getId()));
+        assertFalse(accountService.canAccess(holder, other.getId()));
+        assertThrows(
+            AccountAccessDeniedException.class,
+            () -> accountService.getAccountFor(holder, other.getId())
+        );
+
+        Actor backOffice = new Actor("operador", true);
+        assertEquals(other.getId(), accountService.getAccountFor(backOffice, other.getId()).getId());
+    }
+
+    @Test
+    @DisplayName("Lista as contas do titular em ordem estável")
+    void shouldListAccountsOfHolder() {
+        Account second = accountService.createAccount(new BigDecimal("1.00"), "cliente-1");
+        Account first = accountService.createAccount(new BigDecimal("2.00"), "cliente-1");
+        accountService.createAccount(new BigDecimal("3.00"), "cliente-2");
+
+        List<String> ids = accountService.accountsOf("cliente-1").stream().map(Account::getId).toList();
+
+        assertEquals(List.of(first.getId(), second.getId()).stream().sorted().toList(), ids);
+        assertTrue(accountService.accountsOf("cliente-9").isEmpty());
     }
 }

@@ -16,6 +16,10 @@
       {
         "name": "lastro-operator",
         "description": "Operacao da API do Lastro por pessoas"
+      },
+      {
+        "name": "lastro-holder",
+        "description": "Titular de conta (cliente) na API do Lastro"
       }
     ]
   },
@@ -35,6 +39,19 @@
     {
       "clientId": "lastro-operator",
       "name": "Lastro - operador (somente desenvolvimento)",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": true,
+      "serviceAccountsEnabled": false,
+      "standardFlowEnabled": true,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": true,
+      "redirectUris": ["http://localhost:8080/*"],
+      "webOrigins": ["http://localhost:8080"]
+    },
+    {
+      "clientId": "lastro-holder",
+      "name": "Lastro - titular de conta (somente desenvolvimento)",
       "enabled": true,
       "protocol": "openid-connect",
       "publicClient": true,
@@ -68,6 +85,22 @@
         }
       ],
       "realmRoles": ["lastro-operator"]
+    },
+    {
+      "username": "cliente",
+      "enabled": true,
+      "email": "cliente@lastro.local",
+      "emailVerified": true,
+      "firstName": "Cliente",
+      "lastName": "Lastro",
+      "credentials": [
+        {
+          "type": "password",
+          "value": "cliente",
+          "temporary": false
+        }
+      ],
+      "realmRoles": ["lastro-holder"]
     }
   ]
 }

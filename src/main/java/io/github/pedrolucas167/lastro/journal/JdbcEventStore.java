@@ -11,17 +11,18 @@ import java.util.Map;
 /** Journal durável em banco relacional (Postgres em producao, H2 embutido em dev/testes). */
 @Repository
 public class JdbcEventStore implements EventStore {
-    private static final Map<String, Class<? extends DomainEvent>> TYPES = Map.of(
-        "AccountOpened", AccountOpened.class,
-        "FundsCredited", FundsCredited.class,
-        "FundsDebited", FundsDebited.class,
-        "TransferCompleted", TransferCompleted.class,
-        "OrderSubmitted", OrderSubmitted.class,
-        "OrderCancelled", OrderCancelled.class,
-        "OrderReplaced", OrderReplaced.class,
-        "TradeExecuted", TradeExecuted.class,
-        "SymbolHalted", SymbolHalted.class,
-        "SymbolResumed", SymbolResumed.class
+    private static final Map<String, Class<? extends DomainEvent>> TYPES = Map.ofEntries(
+        Map.entry("AccountOpened", AccountOpened.class),
+        Map.entry("AccountHolderAssigned", AccountHolderAssigned.class),
+        Map.entry("FundsCredited", FundsCredited.class),
+        Map.entry("FundsDebited", FundsDebited.class),
+        Map.entry("TransferCompleted", TransferCompleted.class),
+        Map.entry("OrderSubmitted", OrderSubmitted.class),
+        Map.entry("OrderCancelled", OrderCancelled.class),
+        Map.entry("OrderReplaced", OrderReplaced.class),
+        Map.entry("TradeExecuted", TradeExecuted.class),
+        Map.entry("SymbolHalted", SymbolHalted.class),
+        Map.entry("SymbolResumed", SymbolResumed.class)
     );
 
     private final JdbcTemplate jdbcTemplate;

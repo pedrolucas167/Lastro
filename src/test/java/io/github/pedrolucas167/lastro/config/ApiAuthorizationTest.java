@@ -21,6 +21,7 @@ import java.util.Map;
 import static org.mockito.BDDMockito.given;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 /**
@@ -33,6 +34,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 class ApiAuthorizationTest {
     private static final String SERVICE = "Bearer servico";
     private static final String OPERATOR = "Bearer operador";
+    private static final String HOLDER = "Bearer cliente";
     private static final String NO_ROLE = "Bearer sem-papel";
 
     @Autowired
@@ -48,6 +50,7 @@ class ApiAuthorizationTest {
     void setUp() {
         given(jwtDecoder.decode("servico")).willReturn(jwtWithRoles("lastro-service"));
         given(jwtDecoder.decode("operador")).willReturn(jwtWithRoles("lastro-operator"));
+        given(jwtDecoder.decode("cliente")).willReturn(jwt("cliente-1", "lastro-holder"));
         given(jwtDecoder.decode("sem-papel")).willReturn(jwtWithRoles());
     }
 
@@ -91,6 +94,9 @@ class ApiAuthorizationTest {
 
         mockMvc.perform(get("/api/trading/trades").header("Authorization", SERVICE))
             .andExpect(status().isForbidden());
+
+        mockMvc.perform(get("/api/accounts/" + accountId).header("Authorization", SERVICE))
+            .andExpect(status().isForbidden());
     }
 
     @Test
@@ -128,6 +134,49 @@ class ApiAuthorizationTest {
     }
 
     @Test
+    @DisplayName("O titular abre a própria conta e lê as que tem")
+    void holderOpensAndReadsOwnAccounts() throws Exception {
+        mockMvc.perform(post("/api/accounts")
+                .header("Authorization", HOLDER)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"initialBalance\": 100.00}"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.holder").value("cliente-1"));
+
+        mockMvc.perform(get("/api/accounts/mine").header("Authorization", HOLDER))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$[0].holder").value("cliente-1"));
+    }
+
+    @Test
+    @DisplayName("O titular não movimenta saldo, não define titularidade nem opera ordens")
+    void holderCannotTouchMoneyOrOrders() throws Exception {
+        String accountId = accountService.createAccount(new BigDecimal("100.00"), "cliente-1").getId();
+
+        mockMvc.perform(post("/api/accounts/" + accountId + "/credit")
+                .header("Authorization", HOLDER)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"amount\": 1000.00}"))
+            .andExpect(status().isForbidden());
+
+        mockMvc.perform(post("/api/accounts/" + accountId + "/holder")
+                .header("Authorization", HOLDER)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"holder\": \"cliente-1\"}"))
+            .andExpect(status().isForbidden());
+
+        mockMvc.perform(post("/api/trading/orders")
+                .header("Authorization", HOLDER)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"symbol\": \"PETR4\", \"side\": \"BUY\", \"type\": \"LIMIT\", "
+                    + "\"price\": 30.50, \"quantity\": 100, \"accountId\": \"" + accountId + "\"}"))
+            .andExpect(status().isForbidden());
+
+        mockMvc.perform(post("/api/loadtest/run").header("Authorization", HOLDER))
+            .andExpect(status().isForbidden());
+    }
+
+    @Test
     @DisplayName("Token válido sem papel do realm não passa em nada")
     void tokenWithoutRoleIsForbiddenEverywhere() throws Exception {
         mockMvc.perform(get("/api/trading/trades").header("Authorization", NO_ROLE))
@@ -151,9 +200,13 @@ class ApiAuthorizationTest {
     }
 
     private Jwt jwtWithRoles(String... roles) {
+        return jwt("service-account-lastro", roles);
+    }
+
+    private Jwt jwt(String subject, String... roles) {
         return Jwt.withTokenValue("token")
             .header("alg", "RS256")
-            .subject("service-account-lastro")
+            .subject(subject)
             .issuedAt(Instant.now())
             .expiresAt(Instant.now().plusSeconds(300))
             .claim("realm_access", Map.of("roles", List.of(roles)))

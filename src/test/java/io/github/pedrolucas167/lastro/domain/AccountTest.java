@@ -94,4 +94,24 @@ class AccountTest {
             () -> account.debit(new BigDecimal("-100.00"))
         );
     }
+
+    @Test
+    @DisplayName("Deve definir o titular uma vez e recusar a troca")
+    void shouldAssignHolderOnce() {
+        assertNull(account.getHolder());
+        assertFalse(account.heldBy("cliente-1"));
+
+        account.assignHolder("cliente-1");
+
+        assertEquals("cliente-1", account.getHolder());
+        assertTrue(account.heldBy("cliente-1"));
+        assertFalse(account.heldBy("cliente-2"));
+
+        IllegalStateException exception = assertThrows(
+            IllegalStateException.class,
+            () -> account.assignHolder("cliente-2")
+        );
+        assertEquals("Account acc-1 already has a holder", exception.getMessage());
+        assertEquals("cliente-1", account.getHolder());
+    }
 }

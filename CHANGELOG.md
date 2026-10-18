@@ -4,13 +4,21 @@ Todas as mudanças relevantes deste projeto são documentadas aqui.
 
 O formato segue [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/) e o projeto adota [Versionamento Semântico](https://semver.org/lang/pt-BR/).
 
-> ⚠️ **Experimental.** O núcleo de matching é correto sob concorrência e durável via journal + replay. A API exige autenticação (JWT do Keycloak) e autoriza por papel, mas não há vínculo entre conta e portador, e não há conectividade de mercado (feed/FIX) nem clearing. Não use em produção.
+> ⚠️ **Experimental.** O núcleo de matching é correto sob concorrência e durável via journal + replay. A API exige autenticação (JWT do Keycloak), autoriza por papel na rota e por titular na conta, mas não há entidade de cliente (KYC), limites por titular, ator no journal nem conectividade de mercado (feed/FIX) e clearing. Não use em produção.
 
 ## [Unreleased]
 
 ### Adicionado
 
 - A aplicação recusa subir quando o segredo do cliente M2M de desenvolvimento (público no repositório) é usado com um emissor que não seja localhost — o realm de demonstração viraria uma porta aberta. `lastro.security.reject-dev-credentials=false` troca o erro por um aviso.
+- Vínculo entre conta e titular: cada conta pode ter um titular (o `sub` do Keycloak) e o papel `lastro-holder` só enxerga e só tira dinheiro das contas que tem. O vínculo é um fato do journal (`AccountHolderAssigned`), então sobrevive ao replay, e é definido uma vez — reatribuir titularidade responde `409`.
+- `GET /api/accounts/mine` (as contas do próprio token) e `POST /api/accounts/{id}/holder` (definir titular, ato de operador). O operador também pode abrir uma conta em nome de alguém passando `holder` no corpo de `POST /api/accounts`.
+- Realm de desenvolvimento ganha o papel `lastro-holder`, o cliente `lastro-holder` e o usuário `cliente`/`cliente`.
+
+### Alterado
+
+- A resposta de conta (`AccountResponse`) passa a trazer o `holder`, e `GET /api/accounts/{id}` e `GET /api/transactions/{id}` passam a ser acessíveis a quem tem a conta — o operador continua vendo qualquer uma; quem não é o titular recebe `403`.
+- Autenticado sem o papel exigido continua `403`; a tentativa de operar conta de terceiro também, mas o corpo da resposta diz que a conta é de outro titular.
 
 ## [0.2.0] - 2026-10-18
 
