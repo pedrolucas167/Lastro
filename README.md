@@ -5,7 +5,7 @@
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](./LICENSE)
 [![Java](https://img.shields.io/badge/Java-25-orange.svg)](https://openjdk.org/projects/jdk/25/)
 
-> **Status: experimental (v0.x).** O núcleo de matching é correto sob concorrência e durável via journal + replay. A API exige autenticação (JWT do Keycloak), mas a autorização por papel ainda é grosseira — qualquer token válido do realm acessa qualquer rota. Isto **não é production-ready**: não há conectividade de mercado (feed/FIX) nem clearing/settlement. Use por sua conta e risco.
+> **Status: experimental (v0.x).** O núcleo de matching é correto sob concorrência e durável via journal + replay. A API exige autenticação (JWT do Keycloak) e autoriza por papel, mas não há vínculo entre conta e portador — quem tem o papel de operador movimenta qualquer conta. Isto **não é production-ready**: não há conectividade de mercado (feed/FIX) nem clearing/settlement. Use por sua conta e risco.
 
 Plataforma de trading de mercado de capitais para testar concorrência e escalabilidade em matching engines, construída com rigor de nível institucional.
 
@@ -81,6 +81,8 @@ deploy/keycloak/      # Realm de desenvolvimento (papéis, clientes e usuário d
 - **Trades**: Execuções com preço e quantidade
 - **Posições**: Tracking de posições e PnL por conta/símbolo
 - **Regulação**: Validações de pré-negociação (janela de negociação, bandas de preço, limites de quantidade/preço/valor e formato do símbolo)
+- **Circuit breaker**: Halt/resume por símbolo, durável no journal, que pausa o trading sem cancelar o book
+- **Controle de acesso**: JWT do Keycloak e autorização por papel (M2M × operador) por rota
 
 ### Concorrência
 
@@ -130,40 +132,50 @@ Seis cenários, de 10 a 1.000 threads e até 20.000 ordens, validam que o sistem
 
 A API estará disponível em `http://localhost:8080`
 
-### Autenticação
+### Autenticação e autorização
 
 A API é um **resource server OAuth2**: toda rota exige um JWT emitido pelo Keycloak, exceto `GET /actuator/health`, que é público para o HEALTHCHECK do container. A aplicação **não é** o provedor de identidade — só valida tokens (JWKS do Keycloak, emissor verificado).
 
-O realm de desenvolvimento (`lastro`, em `deploy/keycloak/lastro-realm.json`) já traz os papéis e clientes usados pelo projeto:
+O realm de desenvolvimento (`lastro`, em `deploy/keycloak/lastro-realm.json`) traz dois papéis, e cada rota exige um deles:
 
-| Papel | Para quem |
-|-------|-----------|
-| `lastro-service` | chamadas de serviço (M2M) — é o papel do load generator |
-| `lastro-operator` | operação por pessoas |
+| Rota | `lastro-service` (M2M) | `lastro-operator` |
+|------|:---:|:---:|
+| `POST /api/accounts`, `POST /api/transactions/transfer` | ✓ | ✓ |
+| `POST /api/accounts/{id}/credit`, `/debit` (movimenta saldo) | – | ✓ |
+| `GET /api/accounts/{id}`, `GET /api/transactions/{id}` | – | ✓ |
+| `POST /api/trading/orders`, `/replace`, `/cancel` | – | ✓ |
+| `GET /api/trading/**` (book, trades, posições, PnL) | – | ✓ |
+| `POST /api/market/{symbol}/halt`, `/resume`, `GET /api/market/halted` | – | ✓ |
+| `/api/loadtest/**` (disparar e consultar carga) | – | ✓ |
+| `/actuator/metrics`, `/prometheus`, `/info` | – | ✓ |
+| `/v3/api-docs`, `/swagger-ui` | ✓ | ✓ |
+| `GET /actuator/health` | público | público |
+
+O papel M2M faz apenas o que o load generator precisa — abrir conta e transferir. Todo o resto, inclusive movimentar saldo e acionar halt, é ato de operador: um cliente de serviço comprometido não movimenta dinheiro nem opera o mercado.
 
 ```bash
 docker compose up -d keycloak   # Keycloak em http://localhost:8090 (admin/admin)
 ```
 
-Token de serviço (client credentials) e uma chamada autenticada:
+Token de operador (senha `operador`) e uma chamada autenticada:
 
 ```bash
 TOKEN=$(curl -s -X POST "http://localhost:8090/realms/lastro/protocol/openid-connect/token" \
-  -d "grant_type=client_credentials" \
-  -d "client_id=lastro-service" \
-  -d "client_secret=lastro-service-secret" | jq -r .access_token)
+  -d "grant_type=password" -d "client_id=lastro-operator" \
+  -d "username=operador" -d "password=operador" | jq -r .access_token)
 
 curl -H "Authorization: Bearer $TOKEN" http://localhost:8080/api/trading/trades
 ```
 
-Para um token de operador (senha `operador`), troque o grant:
+Para o token de serviço (client credentials), troque o grant:
 
 ```bash
 curl -s -X POST "http://localhost:8090/realms/lastro/protocol/openid-connect/token" \
-  -d "grant_type=password&client_id=lastro-operator&username=operador&password=operador&scope=openid"
+  -d "grant_type=client_credentials" -d "client_id=lastro-service" \
+  -d "client_secret=lastro-service-secret"
 ```
 
-Sem token a API responde `401`. As credenciais acima são de desenvolvimento — em produção, use um Keycloak próprio e outro segredo de cliente.
+Sem token a API responde `401`; com um token válido sem o papel exigido, `403`. As credenciais acima são de desenvolvimento — em produção, use um Keycloak próprio e outro segredo de cliente.
 
 Para apontar para outro Keycloak, defina `spring.security.oauth2.resourceserver.jwt.issuer-uri` e `spring.security.oauth2.resourceserver.jwt.jwk-set-uri` (ou as variáveis de ambiente equivalentes). O `issuer-uri` é só validado, o JWKS é buscado sob demanda — a aplicação sobe mesmo com o Keycloak fora do ar.
 
@@ -171,7 +183,7 @@ No Swagger UI, use **Authorize** e cole o token.
 
 ### Persistência
 
-Cada mudança de estado — movimento de dinheiro (conta aberta, crédito, débito, transferência) e atividade do engine (ordens enviadas, canceladas, substituídas e trades executados) — é registrada como um **evento imutável** em um **journal append-only**. No startup, o estado em memória é reconstruído a partir do journal: as contas e transações são reaplicadas, e o engine **reexecuta os comandos na mesma ordem**, restaurando o book (com prioridade preço-tempo), as posições e os trades — os dados sobrevivem a reinícios e o próprio journal serve como trilha de auditoria.
+Cada mudança de estado — movimento de dinheiro (conta aberta, crédito, débito, transferência), atividade do engine (ordens enviadas, canceladas, substituídas e trades executados) e controle de mercado (halt/resume por símbolo) — é registrada como um **evento imutável** em um **journal append-only**. No startup, o estado em memória é reconstruído a partir do journal: as contas e transações são reaplicadas, o engine **reexecuta os comandos na mesma ordem** (restaurando o book com prioridade preço-tempo, as posições e os trades) e os símbolos pausados voltam pausados — os dados sobrevivem a reinícios e o próprio journal serve como trilha de auditoria.
 
 - **Desenvolvimento/testes**: H2 embutido em memória, sem configuração.
 - **Produção/demo**: Postgres via Compose:
@@ -197,6 +209,8 @@ Parâmetros:
 - `concurrency`: Nível de concorrência (padrão: 10)
 - `metricsIntervalMs`: Intervalo de coleta de métricas em ms (padrão: 100)
 
+O disparo é ato de operador (o `$TOKEN` acima). O gerador, internamente, chama a API autenticado como cliente M2M.
+
 ### Ver Métricas
 
 ```bash
@@ -205,7 +219,7 @@ curl -H "Authorization: Bearer $TOKEN" http://localhost:8080/api/loadtest/metric
 
 ## API Endpoints
 
-Todas as rotas abaixo exigem `Authorization: Bearer <token>`; a única exceção é `GET /actuator/health`.
+Todas as rotas abaixo exigem `Authorization: Bearer <token>` com o papel adequado (ver a matriz em [Autenticação e autorização](#autenticação-e-autorização)); a única exceção é `GET /actuator/health`.
 
 ### Trading
 
@@ -229,6 +243,14 @@ Todas as rotas abaixo exigem `Authorization: Bearer <token>`; a única exceção
 
 - `POST /api/transactions/transfer` - Transferir entre contas (body: `{"fromAccountId": "x", "toAccountId": "y", "amount": 100.00, "idempotencyKey": "optional"}`)
 - `GET /api/transactions/{id}` - Buscar transação
+
+### Mercado
+
+- `POST /api/market/{symbol}/halt` - Pausar o trading de um símbolo (body opcional: `{"reason": "circuito de protecao"}`)
+- `POST /api/market/{symbol}/resume` - Retomar o trading do símbolo
+- `GET /api/market/halted` - Listar símbolos pausados e seus motivos
+
+O halt bloqueia ordens novas e amend do símbolo, mas **não cancela** o que está no book — cancelar continua permitido para desmontar posições. O estado é durável: sobrevive a restart pelo journal.
 
 ### Load Tests
 

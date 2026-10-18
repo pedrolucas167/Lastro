@@ -23,6 +23,7 @@ public class RegulatoryValidationService {
     private static final int MAX_QUANTITY = 1000000;
     private static final BigDecimal MAX_ORDER_VALUE = new BigDecimal("100000000");
 
+    private final MarketHaltService marketHaltService;
     private final PriceBandProperties priceBand;
     private final boolean marketEnabled;
     private final boolean weekendTradingEnabled;
@@ -30,11 +31,13 @@ public class RegulatoryValidationService {
     private final LocalTime marketClose;
 
     public RegulatoryValidationService(
+            MarketHaltService marketHaltService,
             PriceBandProperties priceBand,
             @Value("${lastro.market.enabled:true}") boolean marketEnabled,
             @Value("${lastro.market.weekend-trading-enabled:false}") boolean weekendTradingEnabled,
             @Value("${lastro.market.open:10:00}") String marketOpen,
             @Value("${lastro.market.close:18:00}") String marketClose) {
+        this.marketHaltService = marketHaltService;
         this.priceBand = priceBand;
         this.marketEnabled = marketEnabled;
         this.weekendTradingEnabled = weekendTradingEnabled;
@@ -44,6 +47,7 @@ public class RegulatoryValidationService {
 
     public void validateOrder(String symbol, OrderSide side, OrderType type, 
                              BigDecimal price, int quantity, String accountId) {
+        validateNotHalted(symbol);
         validateMarketHours();
         validateQuantity(quantity);
         validatePrice(price, type);
@@ -53,6 +57,17 @@ public class RegulatoryValidationService {
         
         logger.info("Regulatory validation passed for order {} {} {} @ {} for account {}", 
             side, type, quantity, price, accountId);
+    }
+
+    /**
+     * Vale para ordem nova e para amend (os dois passam por aqui). Cancelar nao passa, e
+     * e proposital: num simbolo pausado o operador precisa poder desmontar o book.
+     */
+    private void validateNotHalted(String symbol) {
+        if (marketHaltService.isHalted(symbol)) {
+            throw new RegulatoryException(String.format("Trading halted for %s: %s",
+                symbol, marketHaltService.haltReason(symbol)));
+        }
     }
 
     private void validateMarketHours() {
