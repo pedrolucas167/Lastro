@@ -8,6 +8,7 @@ import org.junit.jupiter.api.Test;
 
 import java.math.BigDecimal;
 import java.util.List;
+import java.util.Set;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -17,6 +18,8 @@ import java.util.concurrent.atomic.AtomicInteger;
 import static org.junit.jupiter.api.Assertions.*;
 
 public class TradingConcurrencyTest {
+    private static final Actor BACK_OFFICE = new Actor("operador", Set.of(Actor.OPERATOR));
+
     private MatchingEngine matchingEngine;
     private OrderService orderService;
 
@@ -39,7 +42,7 @@ public class TradingConcurrencyTest {
             executor.submit(() -> {
                 try {
                     for (int i = 0; i < numOrders / threads; i++) {
-                        Order order = orderService.createOrder(
+                        Order order = orderService.createOrder(BACK_OFFICE, 
                             symbol, OrderSide.BUY, OrderType.LIMIT,
                             new BigDecimal("30.00"), 10, "acc-" + Thread.currentThread().getId()
                         );
@@ -75,7 +78,7 @@ public class TradingConcurrencyTest {
             executor.submit(() -> {
                 try {
                     for (int i = 0; i < numPairs / threads; i++) {
-                        Order buyOrder = orderService.createOrder(
+                        Order buyOrder = orderService.createOrder(BACK_OFFICE, 
                             symbol, OrderSide.BUY, OrderType.LIMIT,
                             new BigDecimal("50.00"), 10, "acc-buy-" + threadId
                         );
@@ -89,7 +92,7 @@ public class TradingConcurrencyTest {
             executor.submit(() -> {
                 try {
                     for (int i = 0; i < numPairs / threads; i++) {
-                        Order sellOrder = orderService.createOrder(
+                        Order sellOrder = orderService.createOrder(BACK_OFFICE, 
                             symbol, OrderSide.SELL, OrderType.LIMIT,
                             new BigDecimal("50.00"), 10, "acc-sell-" + threadId
                         );
@@ -127,7 +130,7 @@ public class TradingConcurrencyTest {
                     for (int i = 0; i < numOrders / threads; i++) {
                         OrderSide side = (threadId % 2 == 0) ? OrderSide.BUY : OrderSide.SELL;
                         BigDecimal price = new BigDecimal(20 + (i % 10));
-                        Order order = orderService.createOrder(
+                        Order order = orderService.createOrder(BACK_OFFICE, 
                             symbol, side, OrderType.LIMIT,
                             price, 10, "acc-" + threadId
                         );
@@ -169,13 +172,13 @@ public class TradingConcurrencyTest {
             executor.submit(() -> {
                 try {
                     for (int i = 0; i < numCycles; i++) {
-                        Order buy = orderService.createOrder(
+                        Order buy = orderService.createOrder(BACK_OFFICE, 
                             symbol, OrderSide.BUY, OrderType.LIMIT,
                             new BigDecimal("50.00"), 5, "acc-" + threadId
                         );
                         matchingEngine.submitOrder(buy);
                         
-                        Order sell = orderService.createOrder(
+                        Order sell = orderService.createOrder(BACK_OFFICE, 
                             symbol, OrderSide.SELL, OrderType.LIMIT,
                             new BigDecimal("50.00"), 5, "acc-" + threadId
                         );
@@ -209,13 +212,13 @@ public class TradingConcurrencyTest {
             executor.submit(() -> {
                 try {
                     for (int i = 0; i < numTrades / threads; i++) {
-                        Order buy = orderService.createOrder(
+                        Order buy = orderService.createOrder(BACK_OFFICE, 
                             symbol, OrderSide.BUY, OrderType.LIMIT,
                             new BigDecimal("40.00"), 10, "acc-" + threadId
                         );
                         matchingEngine.submitOrder(buy);
                         
-                        Order sell = orderService.createOrder(
+                        Order sell = orderService.createOrder(BACK_OFFICE, 
                             symbol, OrderSide.SELL, OrderType.LIMIT,
                             new BigDecimal("40.00"), 10, "acc-" + threadId
                         );

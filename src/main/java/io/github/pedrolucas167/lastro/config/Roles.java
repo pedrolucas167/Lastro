@@ -8,30 +8,23 @@ import java.util.Set;
 import java.util.stream.Collectors;
 
 /**
- * O vocabulario de papeis do realm e a unica regra de "quem e privilegiado".
+ * Le o token como um {@link Actor}: o `sub` e os papeis que vieram como authorities.
  *
- * O back office -- operador e servico M2M -- opera qualquer conta. Quem nao e privilegiado
- * so opera as contas que tem. Os nomes ficam aqui porque a matriz de rotas (SecurityConfig)
- * e a resolucao do ator precisam concordar sobre eles.
+ * O Spring prefixa as authorities com `ROLE_`; o ator guarda o nome do papel do realm, que e o
+ * que o journal registra e o que a matriz de rotas (SecurityConfig) usa.
  */
 public final class Roles {
-    public static final String SERVICE = "lastro-service";
-    public static final String OPERATOR = "lastro-operator";
-    public static final String HOLDER = "lastro-holder";
-
     private static final String PREFIX = "ROLE_";
 
     private Roles() {
     }
 
     public static Actor actor(Authentication authentication) {
-        return new Actor(authentication.getName(), isPrivileged(authentication));
-    }
-
-    public static boolean isPrivileged(Authentication authentication) {
-        Set<String> authorities = authentication.getAuthorities().stream()
+        Set<String> roles = authentication.getAuthorities().stream()
             .map(GrantedAuthority::getAuthority)
+            .filter(authority -> authority.startsWith(PREFIX))
+            .map(authority -> authority.substring(PREFIX.length()))
             .collect(Collectors.toSet());
-        return authorities.contains(PREFIX + SERVICE) || authorities.contains(PREFIX + OPERATOR);
+        return new Actor(authentication.getName(), roles);
     }
 }

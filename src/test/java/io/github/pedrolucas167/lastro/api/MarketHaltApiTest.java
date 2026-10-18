@@ -1,6 +1,8 @@
 package io.github.pedrolucas167.lastro.api;
 
 import com.jayway.jsonpath.JsonPath;
+import io.github.pedrolucas167.lastro.domain.Actor;
+import io.github.pedrolucas167.lastro.journal.DomainEvent;
 import io.github.pedrolucas167.lastro.journal.EventStore;
 import io.github.pedrolucas167.lastro.journal.MarketEvent;
 import io.github.pedrolucas167.lastro.journal.SymbolHalted;
@@ -23,10 +25,12 @@ import org.springframework.test.web.servlet.MvcResult;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.not;
 import static org.hamcrest.Matchers.blankOrNullString;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.BDDMockito.given;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -39,6 +43,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @AutoConfigureMockMvc
 class MarketHaltApiTest {
     private static final String OPERATOR = "Bearer operador";
+    /** O halt e ato de operador: e ele que aparece no journal como ator do fato. */
+    private static final Actor BACK_OFFICE = new Actor("operador", Set.of(Actor.OPERATOR));
 
     @Autowired
     private MockMvc mockMvc;
@@ -59,7 +65,7 @@ class MarketHaltApiTest {
 
     @AfterEach
     void releaseAllSymbols() {
-        marketHaltService.haltedSymbols().keySet().forEach(marketHaltService::resume);
+        marketHaltService.haltedSymbols().keySet().forEach(symbol -> marketHaltService.resume(BACK_OFFICE, symbol));
     }
 
     @Test
@@ -82,6 +88,7 @@ class MarketHaltApiTest {
             .andExpect(jsonPath("$.message").value(containsString("Trading halted for PETR4")));
 
         assertTrue(journaled(SymbolHalted.class, "PETR4"));
+        assertEquals(BACK_OFFICE, actorOf(SymbolHalted.class, "PETR4"));
     }
 
     @Test
@@ -170,6 +177,17 @@ class MarketHaltApiTest {
             .filter(type::isInstance)
             .map(MarketEvent.class::cast)
             .anyMatch(event -> symbol.equals(symbolOf(event)));
+    }
+
+    /** O ator gravado no journal para o fato: quem fez, com os papeis que carregava. */
+    private Actor actorOf(Class<? extends MarketEvent> type, String symbol) {
+        return eventStore.readAll().stream()
+            .filter(type::isInstance)
+            .map(MarketEvent.class::cast)
+            .filter(event -> symbol.equals(symbolOf(event)))
+            .map(DomainEvent::actor)
+            .findFirst()
+            .orElseThrow();
     }
 
     private String symbolOf(MarketEvent event) {

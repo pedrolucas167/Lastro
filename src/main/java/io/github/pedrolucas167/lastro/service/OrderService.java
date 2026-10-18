@@ -1,5 +1,6 @@
 package io.github.pedrolucas167.lastro.service;
 
+import io.github.pedrolucas167.lastro.domain.Actor;
 import io.github.pedrolucas167.lastro.domain.Order;
 import io.github.pedrolucas167.lastro.domain.OrderSide;
 import io.github.pedrolucas167.lastro.domain.OrderStatus;
@@ -27,16 +28,16 @@ public class OrderService {
         this.eventStore = eventStore;
     }
 
-    public Order createOrder(String symbol, OrderSide side, OrderType type, 
+    public Order createOrder(Actor actor, String symbol, OrderSide side, OrderType type,
                             BigDecimal price, int quantity, String accountId) {
-        return createOrder(symbol, side, type, price, quantity, accountId, TimeInForce.GTC);
+        return createOrder(actor, symbol, side, type, price, quantity, accountId, TimeInForce.GTC);
     }
 
-    public Order createOrder(String symbol, OrderSide side, OrderType type,
+    public Order createOrder(Actor actor, String symbol, OrderSide side, OrderType type,
                             BigDecimal price, int quantity, String accountId, TimeInForce timeInForce) {
         String orderId = UUID.randomUUID().toString();
         eventStore.append(new OrderSubmitted(orderId, symbol, side, type, price, quantity,
-            accountId, timeInForce, Instant.now()));
+            accountId, timeInForce, actor, Instant.now()));
 
         Order order = register(orderId, symbol, side, type, price, quantity, accountId, timeInForce);
 

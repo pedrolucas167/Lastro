@@ -1,5 +1,6 @@
 package io.github.pedrolucas167.lastro.config;
 
+import io.github.pedrolucas167.lastro.domain.Actor;
 import io.github.pedrolucas167.lastro.service.AccountService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -17,6 +18,7 @@ import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 import static org.mockito.BDDMockito.given;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -36,6 +38,8 @@ class ApiAuthorizationTest {
     private static final String OPERATOR = "Bearer operador";
     private static final String HOLDER = "Bearer cliente";
     private static final String NO_ROLE = "Bearer sem-papel";
+    // Quem cria as contas nos preparos e o back office: a matriz testa as rotas, nao o vinculo.
+    private static final Actor BACK_OFFICE = new Actor("operador", Set.of(Actor.OPERATOR));
 
     @Autowired
     private MockMvc mockMvc;
@@ -63,8 +67,8 @@ class ApiAuthorizationTest {
                 .content("{\"initialBalance\": 1000.00}"))
             .andExpect(status().isOk());
 
-        String from = accountService.createAccount(new BigDecimal("100.00")).getId();
-        String to = accountService.createAccount(new BigDecimal("0.00")).getId();
+        String from = accountService.createAccount(BACK_OFFICE, new BigDecimal("100.00")).getId();
+        String to = accountService.createAccount(BACK_OFFICE, new BigDecimal("0.00")).getId();
 
         mockMvc.perform(post("/api/transactions/transfer")
                 .header("Authorization", SERVICE)
@@ -77,7 +81,7 @@ class ApiAuthorizationTest {
     @Test
     @DisplayName("O M2M não movimenta saldo nem opera ordens")
     void serviceAccountCannotTouchMoneyOrOrders() throws Exception {
-        String accountId = accountService.createAccount(new BigDecimal("100.00")).getId();
+        String accountId = accountService.createAccount(BACK_OFFICE, new BigDecimal("100.00")).getId();
 
         mockMvc.perform(post("/api/accounts/" + accountId + "/credit")
                 .header("Authorization", SERVICE)
@@ -112,7 +116,7 @@ class ApiAuthorizationTest {
     @Test
     @DisplayName("O operador opera ordens, saldo e mercado")
     void operatorCanOperate() throws Exception {
-        String accountId = accountService.createAccount(new BigDecimal("100.00")).getId();
+        String accountId = accountService.createAccount(BACK_OFFICE, new BigDecimal("100.00")).getId();
 
         mockMvc.perform(get("/api/trading/trades").header("Authorization", OPERATOR))
             .andExpect(status().isOk());
@@ -151,7 +155,7 @@ class ApiAuthorizationTest {
     @Test
     @DisplayName("O titular não movimenta saldo, não define titularidade nem opera ordens")
     void holderCannotTouchMoneyOrOrders() throws Exception {
-        String accountId = accountService.createAccount(new BigDecimal("100.00"), "cliente-1").getId();
+        String accountId = accountService.createAccount(BACK_OFFICE, new BigDecimal("100.00"), "cliente-1").getId();
 
         mockMvc.perform(post("/api/accounts/" + accountId + "/credit")
                 .header("Authorization", HOLDER)

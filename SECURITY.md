@@ -2,7 +2,9 @@
 
 ## Estado do projeto
 
-O Lastro é **experimental** e **não é production-ready**. A API exige autenticação (JWT do Keycloak) e autoriza em dois níveis: por papel na rota e por titular na conta. O papel M2M só abre conta e transfere; saldo, ordens, carga e halt exigem operador. Cada conta tem um titular — o `sub` do Keycloak que responde por ela — e quem não é o titular só alcança a própria conta: operador e M2M são o balcão e operam qualquer conta, o que a trilha de auditoria cobre, mas o titular não alcança a conta de outro. O que **não** existe: entidade de cliente (KYC) além da identidade do Keycloak, limites por titular, ator registrado no journal e razão de dupla entrada. Não exponha a aplicação a redes não confiáveis.
+O Lastro é **experimental** e **não é production-ready**. A API exige autenticação (JWT do Keycloak) e autoriza em dois níveis: por papel na rota e por titular na conta. O papel M2M só abre conta e transfere; saldo, ordens, carga e halt exigem operador. Cada conta tem um titular — o `sub` do Keycloak que responde por ela — e quem não é o titular só alcança a própria conta: operador e M2M são o balcão e operam qualquer conta, o que a trilha de auditoria cobre, mas o titular não alcança a conta de outro.
+
+A trilha diz **quem fez**: cada evento do journal grava o `sub` do token e os papéis que a identidade carregava no momento da ação. A autoridade fica registrada no fato, então revogar um papel depois não apaga o que a identidade podia antes — mas o journal também não prova o contrário: ele registra o que a API aceitou, não uma assinatura do chamador. O que **não** existe: entidade de cliente (KYC) além da identidade do Keycloak, limites por titular e razão de dupla entrada. Não exponha a aplicação a redes não confiáveis.
 
 ## Credenciais de desenvolvimento
 

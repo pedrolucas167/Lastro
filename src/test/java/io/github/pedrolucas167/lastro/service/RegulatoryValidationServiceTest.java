@@ -1,6 +1,7 @@
 package io.github.pedrolucas167.lastro.service;
 
 import io.github.pedrolucas167.lastro.config.PriceBandProperties;
+import io.github.pedrolucas167.lastro.domain.Actor;
 import io.github.pedrolucas167.lastro.domain.OrderSide;
 import io.github.pedrolucas167.lastro.domain.OrderType;
 import io.github.pedrolucas167.lastro.exception.RegulatoryException;
@@ -10,6 +11,7 @@ import org.junit.jupiter.api.Test;
 
 import java.math.BigDecimal;
 import java.util.Map;
+import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -17,6 +19,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class RegulatoryValidationServiceTest {
     private static final String SYMBOL = "PETR4";
+    private static final Actor BACK_OFFICE = new Actor("operador", Set.of(Actor.OPERATOR));
 
     private PriceBandProperties priceBand(BigDecimal reference) {
         PriceBandProperties properties = new PriceBandProperties();
@@ -85,7 +88,7 @@ class RegulatoryValidationServiceTest {
     @DisplayName("Símbolo pausado rejeita ordem nova, com o motivo do halt")
     void rejectsOrderForHaltedSymbol() {
         MarketHaltService marketHalt = new MarketHaltService(new InMemoryEventStore());
-        marketHalt.halt(SYMBOL, "circuito de protecao");
+        marketHalt.halt(BACK_OFFICE, SYMBOL, "circuito de protecao");
         RegulatoryValidationService service = service(priceBand(new BigDecimal("30.50")), marketHalt);
 
         RegulatoryException rejected = assertThrows(RegulatoryException.class, () -> service.validateOrder(
@@ -98,8 +101,8 @@ class RegulatoryValidationServiceTest {
     @DisplayName("Depois do resume o símbolo volta a aceitar ordem")
     void acceptsOrderAfterResume() {
         MarketHaltService marketHalt = new MarketHaltService(new InMemoryEventStore());
-        marketHalt.halt(SYMBOL, "circuito");
-        marketHalt.resume(SYMBOL);
+        marketHalt.halt(BACK_OFFICE, SYMBOL, "circuito");
+        marketHalt.resume(BACK_OFFICE, SYMBOL);
         RegulatoryValidationService service = service(priceBand(new BigDecimal("30.50")), marketHalt);
 
         assertDoesNotThrow(() -> service.validateOrder(
@@ -110,7 +113,7 @@ class RegulatoryValidationServiceTest {
     @DisplayName("O halt de um símbolo não afeta outro")
     void haltOfOneSymbolDoesNotAffectAnother() {
         MarketHaltService marketHalt = new MarketHaltService(new InMemoryEventStore());
-        marketHalt.halt(SYMBOL, "circuito");
+        marketHalt.halt(BACK_OFFICE, SYMBOL, "circuito");
         RegulatoryValidationService service = service(priceBand(new BigDecimal("30.50")), marketHalt);
 
         assertDoesNotThrow(() -> service.validateOrder(

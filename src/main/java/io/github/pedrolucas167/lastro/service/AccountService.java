@@ -37,29 +37,29 @@ public class AccountService implements JournalRebuildable {
         this.eventStore = eventStore;
     }
 
-    public Account createAccount(BigDecimal initialBalance) {
-        return createAccount(initialBalance, null);
+    public Account createAccount(Actor actor, BigDecimal initialBalance) {
+        return createAccount(actor, initialBalance, null);
     }
 
-    public Account createAccount(BigDecimal initialBalance, String holder) {
+    public Account createAccount(Actor actor, BigDecimal initialBalance, String holder) {
         String id = UUID.randomUUID().toString();
-        eventStore.append(new AccountOpened(id, initialBalance, Instant.now()));
+        eventStore.append(new AccountOpened(id, initialBalance, actor, Instant.now()));
         Account account = new Account(id, initialBalance);
         accounts.put(id, account);
         if (holder != null) {
-            assignHolder(id, holder);
+            assignHolder(actor, id, holder);
         }
         logger.info("Created account {} with initial balance {} and holder {}", id, initialBalance, holder);
         return account;
     }
 
     /** Da um titular a uma conta que ainda nao tem: o vinculo e definido uma vez. */
-    public Account assignHolder(String accountId, String holder) {
+    public Account assignHolder(Actor actor, String accountId, String holder) {
         Account account = getAccount(accountId);
         if (account.getHolder() != null) {
             throw new AccountAlreadyHasHolderException(accountId);
         }
-        eventStore.append(new AccountHolderAssigned(accountId, holder, Instant.now()));
+        eventStore.append(new AccountHolderAssigned(accountId, holder, actor, Instant.now()));
         account.assignHolder(holder);
         logger.info("Assigned account {} to holder {}", accountId, holder);
         return account;
@@ -96,18 +96,18 @@ public class AccountService implements JournalRebuildable {
             .toList();
     }
 
-    public Account credit(String accountId, BigDecimal amount) {
+    public Account credit(Actor actor, String accountId, BigDecimal amount) {
         Account account = getAccount(accountId);
         if (amount.compareTo(BigDecimal.ZERO) < 0) {
             throw new IllegalArgumentException("Amount cannot be negative");
         }
-        eventStore.append(new FundsCredited(accountId, amount, Instant.now()));
+        eventStore.append(new FundsCredited(accountId, amount, actor, Instant.now()));
         account.credit(amount);
         logger.info("Credited {} to account {}", amount, accountId);
         return account;
     }
 
-    public Account debit(String accountId, BigDecimal amount) {
+    public Account debit(Actor actor, String accountId, BigDecimal amount) {
         Account account = getAccount(accountId);
         try {
             account.debit(amount);
@@ -116,7 +116,7 @@ public class AccountService implements JournalRebuildable {
             throw new InsufficientFundsException(accountId);
         }
         try {
-            eventStore.append(new FundsDebited(accountId, amount, Instant.now()));
+            eventStore.append(new FundsDebited(accountId, amount, actor, Instant.now()));
         } catch (RuntimeException e) {
             // O debito ja foi aplicado em memoria; desfaz para nao divergir do journal.
             account.credit(amount);

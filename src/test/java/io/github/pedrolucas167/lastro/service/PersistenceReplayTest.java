@@ -11,11 +11,12 @@ import org.junit.jupiter.api.Test;
 
 import java.math.BigDecimal;
 import java.util.List;
+import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.*;
 
 class PersistenceReplayTest {
-    private static final Actor BACK_OFFICE = new Actor("operador", true);
+    private static final Actor BACK_OFFICE = new Actor("operador", Set.of(Actor.OPERATOR));
 
     @Test
     void rebuildsAccountsAndTransactionsFromJournal() {
@@ -24,10 +25,10 @@ class PersistenceReplayTest {
         TransactionService transactionService =
             new TransactionService(accountService, new IdempotencyService(), eventStore);
 
-        Account from = accountService.createAccount(new BigDecimal("1000.00"));
-        Account to = accountService.createAccount(new BigDecimal("500.00"));
-        accountService.credit(from.getId(), new BigDecimal("100.00"));
-        accountService.debit(from.getId(), new BigDecimal("50.00"));
+        Account from = accountService.createAccount(BACK_OFFICE, new BigDecimal("1000.00"));
+        Account to = accountService.createAccount(BACK_OFFICE, new BigDecimal("500.00"));
+        accountService.credit(BACK_OFFICE, from.getId(), new BigDecimal("100.00"));
+        accountService.debit(BACK_OFFICE, from.getId(), new BigDecimal("50.00"));
         Transaction transfer = transactionService.transfer(BACK_OFFICE, from.getId(), to.getId(), new BigDecimal("200.00"));
 
         // Simula um reinicio: servicos novos, mesmo journal.
@@ -53,8 +54,8 @@ class PersistenceReplayTest {
         TransactionService transactionService =
             new TransactionService(accountService, new IdempotencyService(), eventStore);
 
-        Account poor = accountService.createAccount(new BigDecimal("10.00"));
-        Account rich = accountService.createAccount(new BigDecimal("0.00"));
+        Account poor = accountService.createAccount(BACK_OFFICE, new BigDecimal("10.00"));
+        Account rich = accountService.createAccount(BACK_OFFICE, new BigDecimal("0.00"));
 
         Transaction transfer = transactionService.transfer(BACK_OFFICE, poor.getId(), rich.getId(), new BigDecimal("999.00"));
 
@@ -72,9 +73,9 @@ class PersistenceReplayTest {
         TransactionService writerTransactions =
             new TransactionService(writerAccounts, new IdempotencyService(), eventStore);
 
-        Account a = writerAccounts.createAccount(new BigDecimal("100.00"));
-        Account b = writerAccounts.createAccount(new BigDecimal("0.00"));
-        writerAccounts.credit(a.getId(), new BigDecimal("50.00"));
+        Account a = writerAccounts.createAccount(BACK_OFFICE, new BigDecimal("100.00"));
+        Account b = writerAccounts.createAccount(BACK_OFFICE, new BigDecimal("0.00"));
+        writerAccounts.credit(BACK_OFFICE, a.getId(), new BigDecimal("50.00"));
         Transaction transfer = writerTransactions.transfer(BACK_OFFICE, a.getId(), b.getId(), new BigDecimal("30.00"));
 
         AccountService readerAccounts = new AccountService(eventStore);
@@ -91,8 +92,8 @@ class PersistenceReplayTest {
     void replaysAccountHolder() {
         EventStore eventStore = new InMemoryEventStore();
         AccountService writer = new AccountService(eventStore);
-        Account held = writer.createAccount(new BigDecimal("100.00"), "cliente-1");
-        Account unassigned = writer.createAccount(new BigDecimal("100.00"));
+        Account held = writer.createAccount(BACK_OFFICE, new BigDecimal("100.00"), "cliente-1");
+        Account unassigned = writer.createAccount(BACK_OFFICE, new BigDecimal("100.00"));
 
         AccountService replayed = new AccountService(eventStore);
         replayed.rebuild(eventStore.readAll());

@@ -1,11 +1,13 @@
 package io.github.pedrolucas167.lastro.api;
 
 import jakarta.validation.Valid;
+import io.github.pedrolucas167.lastro.config.Roles;
 import io.github.pedrolucas167.lastro.domain.*;
 import io.github.pedrolucas167.lastro.dto.*;
 import io.github.pedrolucas167.lastro.service.OrderExecutionResult;
 import io.github.pedrolucas167.lastro.service.TradingService;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 
 import java.math.BigDecimal;
@@ -22,12 +24,14 @@ public class TradingController {
     }
 
     @PostMapping("/orders")
-    public ResponseEntity<OrderResponse> createOrder(@Valid @RequestBody CreateOrderRequest request) {
+    public ResponseEntity<OrderResponse> createOrder(Authentication authentication,
+                                                     @Valid @RequestBody CreateOrderRequest request) {
         OrderSide side = OrderSide.valueOf(request.getSide().toUpperCase());
         OrderType type = OrderType.valueOf(request.getType().toUpperCase());
         TimeInForce timeInForce = resolveTimeInForce(request.getTimeInForce());
         
         OrderExecutionResult result = tradingService.submitOrder(
+            Roles.actor(authentication),
             request.getSymbol(),
             side,
             type,
@@ -43,10 +47,12 @@ public class TradingController {
     }
 
     @PostMapping("/orders/{orderId}/replace")
-    public ResponseEntity<OrderResponse> replaceOrder(@PathVariable String orderId,
+    public ResponseEntity<OrderResponse> replaceOrder(Authentication authentication,
+                                                     @PathVariable String orderId,
                                                      @RequestParam String symbol,
                                                      @Valid @RequestBody ReplaceOrderRequest request) {
-        return tradingService.replaceOrder(orderId, symbol, request.getPrice(), request.getQuantity())
+        return tradingService.replaceOrder(Roles.actor(authentication), orderId, symbol,
+                request.getPrice(), request.getQuantity())
             .map(result -> ResponseEntity.ok(toResponse(result.order())))
             .orElseGet(() -> ResponseEntity.notFound().build());
     }
@@ -74,9 +80,10 @@ public class TradingController {
     }
 
     @PostMapping("/orders/{orderId}/cancel")
-    public ResponseEntity<Void> cancelOrder(@PathVariable String orderId, 
+    public ResponseEntity<Void> cancelOrder(Authentication authentication,
+                                          @PathVariable String orderId, 
                                           @RequestParam String symbol) {
-        boolean cancelled = tradingService.cancelOrder(orderId, symbol);
+        boolean cancelled = tradingService.cancelOrder(Roles.actor(authentication), orderId, symbol);
         return cancelled ? ResponseEntity.ok().build() : ResponseEntity.notFound().build();
     }
 

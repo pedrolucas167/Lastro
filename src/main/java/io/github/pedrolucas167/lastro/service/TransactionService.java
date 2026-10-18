@@ -66,7 +66,7 @@ public class TransactionService implements JournalRebuildable {
 
             if (fromAccount.tryDebit(amount)) {
                 toAccount.credit(amount);
-                journalTransfer(transactionId, fromAccountId, toAccountId, amount, fromAccount, toAccount);
+                journalTransfer(transactionId, fromAccountId, toAccountId, amount, actor, fromAccount, toAccount);
                 transaction.setStatus(TransactionStatus.COMPLETED);
                 logger.info("Transfer {} completed successfully", transactionId);
             } else {
@@ -87,10 +87,10 @@ public class TransactionService implements JournalRebuildable {
     }
 
     private void journalTransfer(String transactionId, String fromAccountId, String toAccountId,
-                                 BigDecimal amount, Account fromAccount, Account toAccount) {
+                                 BigDecimal amount, Actor actor, Account fromAccount, Account toAccount) {
         try {
             eventStore.append(new TransferCompleted(
-                transactionId, fromAccountId, toAccountId, amount, Instant.now()));
+                transactionId, fromAccountId, toAccountId, amount, actor, Instant.now()));
         } catch (RuntimeException e) {
             // A transferencia ja foi aplicada em memoria; desfaz para nao divergir do journal.
             toAccount.debit(amount);

@@ -1,5 +1,6 @@
 package io.github.pedrolucas167.lastro.service;
 
+import io.github.pedrolucas167.lastro.domain.Actor;
 import io.github.pedrolucas167.lastro.journal.DomainEvent;
 import io.github.pedrolucas167.lastro.journal.EventStore;
 import io.github.pedrolucas167.lastro.journal.InMemoryEventStore;
@@ -11,17 +12,19 @@ import org.junit.jupiter.api.Test;
 
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.*;
 
 class MarketHaltServiceTest {
+    private static final Actor BACK_OFFICE = new Actor("operador", Set.of(Actor.OPERATOR));
 
     @Test
     @DisplayName("Aciona o halt de um símbolo com o motivo")
     void haltsSymbolWithReason() {
         MarketHaltService market = new MarketHaltService(new InMemoryEventStore());
 
-        market.halt("PETR4", "circuito de protecao");
+        market.halt(BACK_OFFICE, "PETR4", "circuito de protecao");
 
         assertTrue(market.isHalted("PETR4"));
         assertEquals("circuito de protecao", market.haltReason("PETR4"));
@@ -33,7 +36,7 @@ class MarketHaltServiceTest {
     void haltWithoutReasonRecordsADefaultReason() {
         MarketHaltService market = new MarketHaltService(new InMemoryEventStore());
 
-        market.halt("PETR4", "   ");
+        market.halt(BACK_OFFICE, "PETR4", "   ");
 
         assertTrue(market.isHalted("PETR4"));
         assertFalse(market.haltReason("PETR4").isBlank());
@@ -44,7 +47,7 @@ class MarketHaltServiceTest {
     void haltIsScopedToTheSymbol() {
         MarketHaltService market = new MarketHaltService(new InMemoryEventStore());
 
-        market.halt("PETR4", "circuito");
+        market.halt(BACK_OFFICE, "PETR4", "circuito");
 
         assertTrue(market.isHalted("PETR4"));
         assertFalse(market.isHalted("VALE3"));
@@ -54,9 +57,9 @@ class MarketHaltServiceTest {
     @DisplayName("O resume libera o símbolo")
     void resumeReleasesTheSymbol() {
         MarketHaltService market = new MarketHaltService(new InMemoryEventStore());
-        market.halt("PETR4", "circuito");
+        market.halt(BACK_OFFICE, "PETR4", "circuito");
 
-        market.resume("PETR4");
+        market.resume(BACK_OFFICE, "PETR4");
 
         assertFalse(market.isHalted("PETR4"));
         assertNull(market.haltReason("PETR4"));
@@ -69,8 +72,8 @@ class MarketHaltServiceTest {
         EventStore eventStore = new InMemoryEventStore();
         MarketHaltService market = new MarketHaltService(eventStore);
 
-        market.halt("PETR4", "circuito de protecao");
-        market.resume("VALE3");
+        market.halt(BACK_OFFICE, "PETR4", "circuito de protecao");
+        market.resume(BACK_OFFICE, "VALE3");
 
         List<DomainEvent> events = eventStore.readAll();
         assertEquals(2, events.size());
@@ -89,7 +92,7 @@ class MarketHaltServiceTest {
     @DisplayName("Um símbolo pausado volta pausado depois de um restart")
     void haltedSymbolSurvivesRestart() {
         EventStore eventStore = new InMemoryEventStore();
-        new MarketHaltService(eventStore).halt("PETR4", "circuito de protecao");
+        new MarketHaltService(eventStore).halt(BACK_OFFICE, "PETR4", "circuito de protecao");
 
         // Simula um reinicio: servico novo, mesmo journal.
         MarketHaltService replayed = new MarketHaltService(eventStore);
@@ -104,8 +107,8 @@ class MarketHaltServiceTest {
     void resumedSymbolStaysReleasedAfterRestart() {
         EventStore eventStore = new InMemoryEventStore();
         MarketHaltService before = new MarketHaltService(eventStore);
-        before.halt("PETR4", "circuito");
-        before.resume("PETR4");
+        before.halt(BACK_OFFICE, "PETR4", "circuito");
+        before.resume(BACK_OFFICE, "PETR4");
 
         MarketHaltService replayed = new MarketHaltService(eventStore);
         replayed.rebuild(eventStore.readAll());
@@ -117,7 +120,7 @@ class MarketHaltServiceTest {
     @DisplayName("O JournalReplay reconstrói o halt no startup")
     void journalReplayRebuildsHaltState() {
         EventStore eventStore = new InMemoryEventStore();
-        new MarketHaltService(eventStore).halt("PETR4", "circuito");
+        new MarketHaltService(eventStore).halt(BACK_OFFICE, "PETR4", "circuito");
 
         MarketHaltService reader = new MarketHaltService(eventStore);
         new JournalReplay(eventStore, List.of(reader)).run(null);

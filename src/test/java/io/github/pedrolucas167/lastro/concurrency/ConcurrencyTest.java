@@ -14,13 +14,14 @@ import org.junit.jupiter.api.DisplayName;
 import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Set;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.junit.jupiter.api.Assertions.*;
 
 class ConcurrencyTest {
-    private static final Actor BACK_OFFICE = new Actor("operador", true);
+    private static final Actor BACK_OFFICE = new Actor("operador", Set.of(Actor.OPERATOR));
 
     private AccountService accountService;
     private TransactionService transactionService;
@@ -36,7 +37,7 @@ class ConcurrencyTest {
     @Test
     @DisplayName("Deve manter consistência em créditos concorrentes")
     void shouldMaintainConsistencyWithConcurrentCredits() throws Exception {
-        Account account = accountService.createAccount(BigDecimal.ZERO);
+        Account account = accountService.createAccount(BACK_OFFICE, BigDecimal.ZERO);
         int numThreads = 100;
         BigDecimal creditAmount = new BigDecimal("10.00");
         ExecutorService executor = Executors.newFixedThreadPool(numThreads);
@@ -63,7 +64,7 @@ class ConcurrencyTest {
     @DisplayName("Deve manter consistência em débitos concorrentes com saldo suficiente")
     void shouldMaintainConsistencyWithConcurrentDebits() throws Exception {
         BigDecimal initialBalance = new BigDecimal("10000.00");
-        Account account = accountService.createAccount(initialBalance);
+        Account account = accountService.createAccount(BACK_OFFICE, initialBalance);
         int numThreads = 100;
         BigDecimal debitAmount = new BigDecimal("10.00");
         ExecutorService executor = Executors.newFixedThreadPool(numThreads);
@@ -96,7 +97,7 @@ class ConcurrencyTest {
     @DisplayName("Deve rejeitar débitos concorrentes quando saldo insuficiente")
     void shouldRejectConcurrentDebitsWhenInsufficientBalance() throws Exception {
         BigDecimal initialBalance = new BigDecimal("100.00");
-        Account account = accountService.createAccount(initialBalance);
+        Account account = accountService.createAccount(BACK_OFFICE, initialBalance);
         int numThreads = 100;
         BigDecimal debitAmount = new BigDecimal("10.00");
         ExecutorService executor = Executors.newFixedThreadPool(numThreads);
@@ -129,8 +130,8 @@ class ConcurrencyTest {
     @Test
     @DisplayName("Deve manter consistência em transferências concorrentes")
     void shouldMaintainConsistencyWithConcurrentTransfers() throws Exception {
-        Account account1 = accountService.createAccount(new BigDecimal("10000.00"));
-        Account account2 = accountService.createAccount(new BigDecimal("10000.00"));
+        Account account1 = accountService.createAccount(BACK_OFFICE, new BigDecimal("10000.00"));
+        Account account2 = accountService.createAccount(BACK_OFFICE, new BigDecimal("10000.00"));
         
         int numThreads = 100;
         BigDecimal transferAmount = new BigDecimal("10.00");
@@ -166,9 +167,9 @@ class ConcurrencyTest {
     @Test
     @DisplayName("Não deve ter deadlock em transferências cíclicas")
     void shouldNotDeadlockInCyclicTransfers() throws Exception {
-        Account account1 = accountService.createAccount(new BigDecimal("1000.00"));
-        Account account2 = accountService.createAccount(new BigDecimal("1000.00"));
-        Account account3 = accountService.createAccount(new BigDecimal("1000.00"));
+        Account account1 = accountService.createAccount(BACK_OFFICE, new BigDecimal("1000.00"));
+        Account account2 = accountService.createAccount(BACK_OFFICE, new BigDecimal("1000.00"));
+        Account account3 = accountService.createAccount(BACK_OFFICE, new BigDecimal("1000.00"));
         
         int numThreads = 50;
         ExecutorService executor = Executors.newFixedThreadPool(numThreads);
@@ -215,7 +216,7 @@ class ConcurrencyTest {
     @Test
     @DisplayName("Deve preservar invariantes de saldo sob alta concorrência")
     void shouldPreserveBalanceInvariantsUnderHighConcurrency() throws Exception {
-        Account account = accountService.createAccount(new BigDecimal("100000.00"));
+        Account account = accountService.createAccount(BACK_OFFICE, new BigDecimal("100000.00"));
         int numOperations = 1000;
         BigDecimal operationAmount = new BigDecimal("1.00");
         ExecutorService executor = Executors.newFixedThreadPool(50);
