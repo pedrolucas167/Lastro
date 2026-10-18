@@ -1,9 +1,11 @@
 package io.github.pedrolucas167.lastro.service;
 
 import io.github.pedrolucas167.lastro.domain.Account;
+import io.github.pedrolucas167.lastro.domain.Actor;
 import io.github.pedrolucas167.lastro.domain.Transaction;
 import io.github.pedrolucas167.lastro.domain.TransactionStatus;
 import io.github.pedrolucas167.lastro.domain.TransactionType;
+import io.github.pedrolucas167.lastro.exception.AccountAccessDeniedException;
 import io.github.pedrolucas167.lastro.exception.TransactionFailedException;
 import io.github.pedrolucas167.lastro.journal.EventStore;
 import io.github.pedrolucas167.lastro.journal.InMemoryEventStore;
@@ -16,6 +18,10 @@ import java.math.BigDecimal;
 import static org.junit.jupiter.api.Assertions.*;
 
 class TransactionServiceTest {
+    /** O back office opera qualquer conta; o titular apenas as que tem. */
+    private static final Actor BACK_OFFICE = new Actor("operador", true);
+    private static final Actor HOLDER = new Actor("cliente-1", false);
+
     private AccountService accountService;
     private TransactionService transactionService;
     private Account fromAccount;
@@ -36,6 +42,7 @@ class TransactionServiceTest {
     @DisplayName("Deve transferir com sucesso quando saldo suficiente")
     void shouldTransferSuccessfullyWhenSufficientBalance() {
         Transaction transaction = transactionService.transfer(
+            BACK_OFFICE,
             fromAccount.getId(),
             toAccount.getId(),
             new BigDecimal("300.00")
@@ -57,6 +64,7 @@ class TransactionServiceTest {
         assertThrows(
             TransactionFailedException.class,
             () -> transactionService.transfer(
+                BACK_OFFICE,
                 "non-existent",
                 toAccount.getId(),
                 new BigDecimal("100.00")
@@ -70,6 +78,7 @@ class TransactionServiceTest {
         assertThrows(
             TransactionFailedException.class,
             () -> transactionService.transfer(
+                BACK_OFFICE,
                 fromAccount.getId(),
                 "non-existent",
                 new BigDecimal("100.00")
@@ -81,6 +90,7 @@ class TransactionServiceTest {
     @DisplayName("Deve falhar transferência quando saldo insuficiente")
     void shouldFailTransferWhenInsufficientBalance() {
         Transaction transaction = transactionService.transfer(
+            BACK_OFFICE,
             fromAccount.getId(),
             toAccount.getId(),
             new BigDecimal("2000.00")
@@ -95,12 +105,13 @@ class TransactionServiceTest {
     @DisplayName("Deve buscar transação existente")
     void shouldGetExistingTransaction() {
         Transaction created = transactionService.transfer(
+            BACK_OFFICE,
             fromAccount.getId(),
             toAccount.getId(),
             new BigDecimal("100.00")
         );
         
-        Transaction retrieved = transactionService.getTransaction(created.getId());
+        Transaction retrieved = transactionService.getTransaction(BACK_OFFICE, created.getId());
         
         assertNotNull(retrieved);
         assertEquals(created.getId(), retrieved.getId());
@@ -110,7 +121,7 @@ class TransactionServiceTest {
     @Test
     @DisplayName("Deve retornar null ao buscar transação inexistente")
     void shouldReturnNullForNonExistentTransaction() {
-        Transaction transaction = transactionService.getTransaction("non-existent");
+        Transaction transaction = transactionService.getTransaction(BACK_OFFICE, "non-existent");
         assertNull(transaction);
     }
 
@@ -118,6 +129,7 @@ class TransactionServiceTest {
     @DisplayName("Deve criar transação com tipo correto")
     void shouldCreateTransactionWithCorrectType() {
         Transaction transaction = transactionService.transfer(
+            BACK_OFFICE,
             fromAccount.getId(),
             toAccount.getId(),
             new BigDecimal("100.00")
@@ -133,6 +145,7 @@ class TransactionServiceTest {
         BigDecimal originalToBalance = accountService.getAccount(toAccount.getId()).getBalance();
         
         transactionService.transfer(
+            BACK_OFFICE,
             fromAccount.getId(),
             toAccount.getId(),
             new BigDecimal("5000.00")
@@ -140,5 +153,51 @@ class TransactionServiceTest {
         
         assertEquals(originalFromBalance, accountService.getAccount(fromAccount.getId()).getBalance());
         assertEquals(originalToBalance, accountService.getAccount(toAccount.getId()).getBalance());
+    }
+
+    @Test
+    @DisplayName("O titular tira dinheiro da própria conta, não da conta dos outros")
+    void holderCanOnlyTransferFromOwnAccount() {
+        Account mine = accountService.createAccount(new BigDecimal("100.00"), "cliente-1");
+        Account other = accountService.createAccount(new BigDecimal("100.00"), "cliente-2");
+
+        Transaction transaction = transactionService.transfer(
+            HOLDER, mine.getId(), other.getId(), new BigDecimal("30.00"));
+
+        assertEquals(TransactionStatus.COMPLETED, transaction.getStatus());
+        assertEquals(0, new BigDecimal("70.00").compareTo(accountService.getAccount(mine.getId()).getBalance()));
+        assertEquals(0, new BigDecimal("130.00").compareTo(accountService.getAccount(other.getId()).getBalance()));
+
+        assertThrows(AccountAccessDeniedException.class,
+            () -> transactionService.transfer(HOLDER, other.getId(), mine.getId(), new BigDecimal("10.00")));
+        assertEquals(0, new BigDecimal("130.00").compareTo(accountService.getAccount(other.getId()).getBalance()));
+    }
+
+    @Test
+    @DisplayName("Conta sem titular é do back office: o titular não alcança")
+    void holderCannotReachAccountWithoutHolder() {
+        Account unassigned = accountService.createAccount(new BigDecimal("100.00"));
+        Account mine = accountService.createAccount(new BigDecimal("100.00"), "cliente-1");
+
+        assertThrows(AccountAccessDeniedException.class,
+            () -> transactionService.transfer(HOLDER, unassigned.getId(), mine.getId(), new BigDecimal("10.00")));
+    }
+
+    @Test
+    @DisplayName("O titular vê a transação que toca a conta dele e nada além")
+    void holderOnlySeesTransactionsTouchingOwnAccount() {
+        Account mine = accountService.createAccount(new BigDecimal("100.00"), "cliente-1");
+        Account other = accountService.createAccount(new BigDecimal("100.00"), "cliente-2");
+        Account third = accountService.createAccount(new BigDecimal("100.00"), "cliente-3");
+
+        Transaction received = transactionService.transfer(
+            BACK_OFFICE, other.getId(), mine.getId(), new BigDecimal("10.00"));
+        Transaction unrelated = transactionService.transfer(
+            BACK_OFFICE, other.getId(), third.getId(), new BigDecimal("10.00"));
+
+        assertEquals(received.getId(),
+            transactionService.getTransaction(HOLDER, received.getId()).getId());
+        assertThrows(AccountAccessDeniedException.class,
+            () -> transactionService.getTransaction(HOLDER, unrelated.getId()));
     }
 }

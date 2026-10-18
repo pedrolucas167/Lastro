@@ -1,6 +1,6 @@
 package io.github.pedrolucas167.lastro.journal;
 
-/** Eventos de dinheiro: contas e transferencias. */
+/** Eventos de dinheiro: contas (incluindo titularidade) e transferencias. */
 public sealed interface MoneyEvent extends DomainEvent
-        permits AccountOpened, FundsCredited, FundsDebited, TransferCompleted {
+        permits AccountOpened, AccountHolderAssigned, FundsCredited, FundsDebited, TransferCompleted {
 }

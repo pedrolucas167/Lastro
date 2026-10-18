@@ -16,9 +16,6 @@ import org.springframework.security.web.SecurityFilterChain;
 @EnableWebSecurity
 public class SecurityConfig {
 
-    private static final String SERVICE_ROLE = "lastro-service";
-    private static final String OPERATOR_ROLE = "lastro-operator";
-
     /**
      * O decoder padrao do Spring exige o `issuer-uri`, e nesse modo ele busca o discovery
      * do Keycloak durante o startup -- a aplicacao nao sobe se o Keycloak estiver fora.
@@ -40,15 +37,22 @@ public class SecurityConfig {
             .authorizeHttpRequests(requests -> requests
                 .requestMatchers("/actuator/health").permitAll()
                 // O cliente M2M faz exatamente o que o load generator precisa: abrir conta e
-                // transferir. Movimentar saldo, operar ordens, disparar carga e acionar halt
-                // sao atos de operador -- e o operador tambem pode o que o servico pode.
+                // transferir. O titular abre e opera as contas que tem. Todo o resto --
+                // movimentar saldo, operar ordens, disparar carga, acionar halt -- e ato de
+                // operador, que tambem pode o que os outros dois podem.
                 .requestMatchers(HttpMethod.POST, "/api/accounts")
-                    .hasAnyRole(SERVICE_ROLE, OPERATOR_ROLE)
+                    .hasAnyRole(Roles.SERVICE, Roles.OPERATOR, Roles.HOLDER)
                 .requestMatchers(HttpMethod.POST, "/api/transactions/transfer")
-                    .hasAnyRole(SERVICE_ROLE, OPERATOR_ROLE)
+                    .hasAnyRole(Roles.SERVICE, Roles.OPERATOR, Roles.HOLDER)
+                // Quem passa aqui pode chamar; se so enxerga as contas que tem, quem decide e
+                // o servico -- o back office enxerga qualquer conta.
+                .requestMatchers(HttpMethod.GET, "/api/accounts/*", "/api/transactions/*")
+                    .hasAnyRole(Roles.HOLDER, Roles.OPERATOR)
+                .requestMatchers(HttpMethod.POST, "/api/accounts/*/holder")
+                    .hasRole(Roles.OPERATOR)
                 .requestMatchers("/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html")
                     .authenticated()
-                .anyRequest().hasRole(OPERATOR_ROLE))
+                .anyRequest().hasRole(Roles.OPERATOR))
             .oauth2ResourceServer(resourceServer -> resourceServer
                 .jwt(jwt -> jwt.jwtAuthenticationConverter(new KeycloakRealmRolesConverter())));
 

@@ -1,9 +1,11 @@
 package io.github.pedrolucas167.lastro.service;
 
 import io.github.pedrolucas167.lastro.domain.Account;
+import io.github.pedrolucas167.lastro.domain.Actor;
 import io.github.pedrolucas167.lastro.domain.Transaction;
 import io.github.pedrolucas167.lastro.domain.TransactionStatus;
 import io.github.pedrolucas167.lastro.domain.TransactionType;
+import io.github.pedrolucas167.lastro.exception.AccountAccessDeniedException;
 import io.github.pedrolucas167.lastro.exception.TransactionFailedException;
 import io.github.pedrolucas167.lastro.journal.DomainEvent;
 import io.github.pedrolucas167.lastro.journal.EventStore;
@@ -35,19 +37,20 @@ public class TransactionService implements JournalRebuildable {
         this.eventStore = eventStore;
     }
 
-    public Transaction transfer(String fromAccountId, String toAccountId, BigDecimal amount) {
-        return transfer(fromAccountId, toAccountId, amount, null);
+    public Transaction transfer(Actor actor, String fromAccountId, String toAccountId, BigDecimal amount) {
+        return transfer(actor, fromAccountId, toAccountId, amount, null);
     }
 
-    public Transaction transfer(String fromAccountId, String toAccountId, BigDecimal amount, String idempotencyKey) {
+    public Transaction transfer(Actor actor, String fromAccountId, String toAccountId, BigDecimal amount,
+                                String idempotencyKey) {
         if (idempotencyKey != null && !idempotencyKey.isBlank()) {
             return idempotencyService.getOrRecord(idempotencyKey, Instant.now(), 
-                () -> executeTransfer(fromAccountId, toAccountId, amount));
+                () -> executeTransfer(actor, fromAccountId, toAccountId, amount));
         }
-        return executeTransfer(fromAccountId, toAccountId, amount);
+        return executeTransfer(actor, fromAccountId, toAccountId, amount);
     }
 
-    private Transaction executeTransfer(String fromAccountId, String toAccountId, BigDecimal amount) {
+    private Transaction executeTransfer(Actor actor, String fromAccountId, String toAccountId, BigDecimal amount) {
         String transactionId = UUID.randomUUID().toString();
         Transaction transaction = new Transaction(
             transactionId, fromAccountId, toAccountId, amount, TransactionType.TRANSFER
@@ -57,7 +60,8 @@ public class TransactionService implements JournalRebuildable {
             transactionId, fromAccountId, toAccountId, amount);
 
         try {
-            Account fromAccount = accountService.getAccount(fromAccountId);
+            // So sai dinheiro de conta que o ator tem; o destino e escolha de quem paga.
+            Account fromAccount = accountService.getAccountFor(actor, fromAccountId);
             Account toAccount = accountService.getAccount(toAccountId);
 
             if (fromAccount.tryDebit(amount)) {
@@ -69,6 +73,9 @@ public class TransactionService implements JournalRebuildable {
                 transaction.setStatus(TransactionStatus.FAILED);
                 logger.warn("Transfer {} failed: insufficient funds", transactionId);
             }
+        } catch (AccountAccessDeniedException e) {
+            // Autorizacao nao e falha da transferencia: negar acesso e 403, nao 400.
+            throw e;
         } catch (Exception e) {
             transaction.setStatus(TransactionStatus.FAILED);
             logger.error("Transfer {} failed with exception", transactionId, e);
@@ -105,11 +112,22 @@ public class TransactionService implements JournalRebuildable {
         }
     }
 
-    public Transaction getTransaction(String transactionId) {
+    public Transaction getTransaction(Actor actor, String transactionId) {
         Transaction transaction = transactions.get(transactionId);
         if (transaction == null) {
             logger.warn("Transaction not found: {}", transactionId);
+            return null;
+        }
+        if (!actor.privileged() && !touches(actor, transaction)) {
+            // A transacao existe, mas e de outros: nem confirma a existencia nem entrega o extrato.
+            throw new AccountAccessDeniedException(
+                "Transaction " + transactionId + " does not involve an account you hold");
         }
         return transaction;
+    }
+
+    private boolean touches(Actor actor, Transaction transaction) {
+        return accountService.canAccess(actor, transaction.getFromAccountId())
+            || accountService.canAccess(actor, transaction.getToAccountId());
     }
 }

@@ -5,7 +5,7 @@
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](./LICENSE)
 [![Java](https://img.shields.io/badge/Java-25-orange.svg)](https://openjdk.org/projects/jdk/25/)
 
-> **Status: experimental (v0.x).** O núcleo de matching é correto sob concorrência e durável via journal + replay. A API exige autenticação (JWT do Keycloak) e autoriza por papel, mas não há vínculo entre conta e portador — quem tem o papel de operador movimenta qualquer conta. Isto **não é production-ready**: não há conectividade de mercado (feed/FIX) nem clearing/settlement. Use por sua conta e risco.
+> **Status: experimental (v0.x).** O núcleo de matching é correto sob concorrência e durável via journal + replay. A API exige autenticação (JWT do Keycloak), autoriza por papel na rota e por titular na conta — o titular só alcança as contas que tem, enquanto operador e M2M são o balcão e movimentam qualquer conta. Isto **não é production-ready**: não há entidade de cliente (KYC), limites por titular, ator no journal nem conectividade de mercado (feed/FIX) e clearing/settlement. Use por sua conta e risco.
 
 Plataforma de trading de mercado de capitais para testar concorrência e escalabilidade em matching engines, construída com rigor de nível institucional.
 
@@ -136,22 +136,28 @@ A API estará disponível em `http://localhost:8080`
 
 A API é um **resource server OAuth2**: toda rota exige um JWT emitido pelo Keycloak, exceto `GET /actuator/health`, que é público para o HEALTHCHECK do container. A aplicação **não é** o provedor de identidade — só valida tokens (JWKS do Keycloak, emissor verificado).
 
-O realm de desenvolvimento (`lastro`, em `deploy/keycloak/lastro-realm.json`) traz dois papéis, e cada rota exige um deles:
+O realm de desenvolvimento (`lastro`, em `deploy/keycloak/lastro-realm.json`) traz três papéis, e cada rota exige um deles:
 
-| Rota | `lastro-service` (M2M) | `lastro-operator` |
-|------|:---:|:---:|
-| `POST /api/accounts`, `POST /api/transactions/transfer` | ✓ | ✓ |
-| `POST /api/accounts/{id}/credit`, `/debit` (movimenta saldo) | – | ✓ |
-| `GET /api/accounts/{id}`, `GET /api/transactions/{id}` | – | ✓ |
-| `POST /api/trading/orders`, `/replace`, `/cancel` | – | ✓ |
-| `GET /api/trading/**` (book, trades, posições, PnL) | – | ✓ |
-| `POST /api/market/{symbol}/halt`, `/resume`, `GET /api/market/halted` | – | ✓ |
-| `/api/loadtest/**` (disparar e consultar carga) | – | ✓ |
-| `/actuator/metrics`, `/prometheus`, `/info` | – | ✓ |
-| `/v3/api-docs`, `/swagger-ui` | ✓ | ✓ |
-| `GET /actuator/health` | público | público |
+| Rota | `lastro-service` (M2M) | `lastro-operator` | `lastro-holder` (titular) |
+|------|:---:|:---:|:---:|
+| `POST /api/accounts` | ✓ | ✓ | ✓ (só em nome próprio) |
+| `POST /api/transactions/transfer` | ✓ | ✓ | ✓ (só a partir de conta própria) |
+| `GET /api/accounts/{id}` | – | ✓ (qualquer) | ✓ (só a própria) |
+| `GET /api/accounts/mine` (as contas do próprio token) | – | ✓ | ✓ |
+| `GET /api/transactions/{id}` | – | ✓ (qualquer) | ✓ (se tocar conta própria) |
+| `POST /api/accounts/{id}/holder` (definir titular) | – | ✓ | – |
+| `POST /api/accounts/{id}/credit`, `/debit` (movimenta saldo) | – | ✓ | – |
+| `POST /api/trading/orders`, `/replace`, `/cancel` | – | ✓ | – |
+| `GET /api/trading/**` (book, trades, posições, PnL) | – | ✓ | – |
+| `POST /api/market/{symbol}/halt`, `/resume`, `GET /api/market/halted` | – | ✓ | – |
+| `/api/loadtest/**` (disparar e consultar carga) | – | ✓ | – |
+| `/actuator/metrics`, `/prometheus`, `/info` | – | ✓ | – |
+| `/v3/api-docs`, `/swagger-ui` | ✓ | ✓ | ✓ |
+| `GET /actuator/health` | público | público | público |
 
 O papel M2M faz apenas o que o load generator precisa — abrir conta e transferir. Todo o resto, inclusive movimentar saldo e acionar halt, é ato de operador: um cliente de serviço comprometido não movimenta dinheiro nem opera o mercado.
+
+**Titular da conta.** O titular é o `sub` do Keycloak — a identidade que responde pela conta, gravada no journal junto com a abertura. O operador pode abrir uma conta em nome de alguém (`{"initialBalance": 100.00, "holder": "<sub>"}`) ou dar titular a uma conta que ainda não tem (`POST /api/accounts/{id}/holder`), mas o vínculo **é definido uma vez**: não existe troca de titularidade por reatribuição (a resposta é `409`). Quem tem o papel `lastro-holder` só enxerga e só tira dinheiro das contas que tem; conta sem titular é alcançável apenas pelo operador e pelo M2M. Movimentar saldo de terceiro (crédito/débito), operar o mercado e definir titularidade continuam sendo atos de operador — é o balcão, e é o que a trilha de auditoria cobre.
 
 ```bash
 docker compose up -d keycloak   # Keycloak em http://localhost:8090 (admin/admin)
@@ -175,6 +181,16 @@ curl -s -X POST "http://localhost:8090/realms/lastro/protocol/openid-connect/tok
   -d "client_secret=lastro-service-secret"
 ```
 
+O titular da conta (`cliente`, senha `cliente`) usa o mesmo grant do operador, no cliente `lastro-holder`:
+
+```bash
+TOKEN_HOLDER=$(curl -s -X POST "http://localhost:8090/realms/lastro/protocol/openid-connect/token" \
+  -d "grant_type=password" -d "client_id=lastro-holder" \
+  -d "username=cliente" -d "password=cliente" | jq -r .access_token)
+
+curl -H "Authorization: Bearer $TOKEN_HOLDER" http://localhost:8080/api/accounts/mine
+```
+
 Sem token a API responde `401`; com um token válido sem o papel exigido, `403`. As credenciais acima são de desenvolvimento — em produção, use um Keycloak próprio e outro segredo de cliente. E como o segredo do cliente M2M está no repositório, a aplicação **recusa subir** se ele for usado com um emissor que não seja localhost (`lastro.security.reject-dev-credentials=false` troca o erro por um aviso).
 
 Para apontar para outro Keycloak, defina `spring.security.oauth2.resourceserver.jwt.issuer-uri` e `spring.security.oauth2.resourceserver.jwt.jwk-set-uri` (ou as variáveis de ambiente equivalentes). O `issuer-uri` é só validado, o JWKS é buscado sob demanda — a aplicação sobe mesmo com o Keycloak fora do ar.
@@ -183,7 +199,7 @@ No Swagger UI, use **Authorize** e cole o token.
 
 ### Persistência
 
-Cada mudança de estado — movimento de dinheiro (conta aberta, crédito, débito, transferência), atividade do engine (ordens enviadas, canceladas, substituídas e trades executados) e controle de mercado (halt/resume por símbolo) — é registrada como um **evento imutável** em um **journal append-only**. No startup, o estado em memória é reconstruído a partir do journal: as contas e transações são reaplicadas, o engine **reexecuta os comandos na mesma ordem** (restaurando o book com prioridade preço-tempo, as posições e os trades) e os símbolos pausados voltam pausados — os dados sobrevivem a reinícios e o próprio journal serve como trilha de auditoria.
+Cada mudança de estado — movimento de dinheiro (conta aberta, titular definido, crédito, débito, transferência), atividade do engine (ordens enviadas, canceladas, substituídas e trades executados) e controle de mercado (halt/resume por símbolo) — é registrada como um **evento imutável** em um **journal append-only**. No startup, o estado em memória é reconstruído a partir do journal: as contas e transações são reaplicadas, o engine **reexecuta os comandos na mesma ordem** (restaurando o book com prioridade preço-tempo, as posições e os trades) e os símbolos pausados voltam pausados — os dados sobrevivem a reinícios e o próprio journal serve como trilha de auditoria.
 
 - **Desenvolvimento/testes**: H2 embutido em memória, sem configuração.
 - **Produção/demo**: Postgres via Compose:
@@ -234,8 +250,10 @@ Todas as rotas abaixo exigem `Authorization: Bearer <token>` com o papel adequad
 
 ### Contas
 
-- `POST /api/accounts` - Criar conta (body: `{"initialBalance": 1000.00}`)
+- `POST /api/accounts` - Criar conta (body: `{"initialBalance": 1000.00}`; o operador pode abrir em nome de alguém com `"holder": "<sub>"`)
+- `GET /api/accounts/mine` - Listar as contas do próprio token
 - `GET /api/accounts/{id}` - Buscar conta
+- `POST /api/accounts/{id}/holder` - Definir o titular de uma conta sem titular (body: `{"holder": "<sub>"}`, ato de operador)
 - `POST /api/accounts/{id}/credit` - Creditar valor (body: `{"amount": 100.00}`)
 - `POST /api/accounts/{id}/debit` - Debitar valor (body: `{"amount": 100.00}`)
 

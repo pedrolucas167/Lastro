@@ -54,6 +54,18 @@ class JdbcEventStoreTest {
     }
 
     @Test
+    void roundTripsAccountHolderAssigned() {
+        Instant openedAt = Instant.parse("2026-01-01T10:00:00Z");
+        eventStore.append(new AccountOpened("acc-1", new BigDecimal("1000.00"), openedAt));
+        eventStore.append(new AccountHolderAssigned("acc-1", "cliente-1", openedAt.plusSeconds(1)));
+
+        List<DomainEvent> events = eventStore.readAll();
+
+        assertEquals(2, events.size());
+        assertEquals(new AccountHolderAssigned("acc-1", "cliente-1", openedAt.plusSeconds(1)), events.get(1));
+    }
+
+    @Test
     void roundTripsMarketHaltEvents() {
         Instant haltedAt = Instant.parse("2026-01-01T10:00:00Z");
         eventStore.append(new SymbolHalted("PETR4", "circuito de protecao", haltedAt));

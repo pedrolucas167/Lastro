@@ -7,6 +7,8 @@ import java.util.concurrent.locks.ReentrantLock;
 public class Account {
     private final String id;
     private BigDecimal balance;
+    /** Escrito uma vez (request ou replay) e lido por outras threads sem passar pelo lock do saldo. */
+    private volatile String holder;
     private final Lock lock = new ReentrantLock();
 
     public Account(String id, BigDecimal initialBalance) {
@@ -16,6 +18,22 @@ public class Account {
 
     public String getId() {
         return id;
+    }
+
+    public String getHolder() {
+        return holder;
+    }
+
+    /** O titular e definido uma vez: a conta nao troca de dono por reatribuicao. */
+    public void assignHolder(String holder) {
+        if (this.holder != null) {
+            throw new IllegalStateException("Account " + id + " already has a holder");
+        }
+        this.holder = holder;
+    }
+
+    public boolean heldBy(String subject) {
+        return holder != null && holder.equals(subject);
     }
 
     public BigDecimal getBalance() {

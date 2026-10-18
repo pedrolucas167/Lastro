@@ -1,6 +1,7 @@
 package io.github.pedrolucas167.lastro.concurrency;
 
 import io.github.pedrolucas167.lastro.domain.Account;
+import io.github.pedrolucas167.lastro.domain.Actor;
 import io.github.pedrolucas167.lastro.journal.EventStore;
 import io.github.pedrolucas167.lastro.journal.InMemoryEventStore;
 import io.github.pedrolucas167.lastro.service.AccountService;
@@ -19,6 +20,8 @@ import java.util.concurrent.atomic.AtomicInteger;
 import static org.junit.jupiter.api.Assertions.*;
 
 class ConcurrencyTest {
+    private static final Actor BACK_OFFICE = new Actor("operador", true);
+
     private AccountService accountService;
     private TransactionService transactionService;
 
@@ -142,7 +145,7 @@ class ConcurrencyTest {
                     String from = direction ? account1.getId() : account2.getId();
                     String to = direction ? account2.getId() : account1.getId();
                     
-                    var transaction = transactionService.transfer(from, to, transferAmount);
+                    var transaction = transactionService.transfer(BACK_OFFICE, from, to, transferAmount);
                     if (transaction.getStatus() == io.github.pedrolucas167.lastro.domain.TransactionStatus.COMPLETED) {
                         successCount.incrementAndGet();
                     }
@@ -188,7 +191,7 @@ class ConcurrencyTest {
                         to = account1.getId();
                     }
                     
-                    var transaction = transactionService.transfer(from, to, new BigDecimal("10.00"));
+                    var transaction = transactionService.transfer(BACK_OFFICE, from, to, new BigDecimal("10.00"));
                     if (transaction.getStatus() == io.github.pedrolucas167.lastro.domain.TransactionStatus.COMPLETED) {
                         completedCount.incrementAndGet();
                     }

@@ -1,8 +1,12 @@
 package io.github.pedrolucas167.lastro.service;
 
 import io.github.pedrolucas167.lastro.domain.Account;
+import io.github.pedrolucas167.lastro.domain.Actor;
+import io.github.pedrolucas167.lastro.exception.AccountAccessDeniedException;
+import io.github.pedrolucas167.lastro.exception.AccountAlreadyHasHolderException;
 import io.github.pedrolucas167.lastro.exception.AccountNotFoundException;
 import io.github.pedrolucas167.lastro.exception.InsufficientFundsException;
+import io.github.pedrolucas167.lastro.journal.AccountHolderAssigned;
 import io.github.pedrolucas167.lastro.journal.AccountOpened;
 import io.github.pedrolucas167.lastro.journal.DomainEvent;
 import io.github.pedrolucas167.lastro.journal.EventStore;
@@ -17,6 +21,7 @@ import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -33,11 +38,30 @@ public class AccountService implements JournalRebuildable {
     }
 
     public Account createAccount(BigDecimal initialBalance) {
+        return createAccount(initialBalance, null);
+    }
+
+    public Account createAccount(BigDecimal initialBalance, String holder) {
         String id = UUID.randomUUID().toString();
         eventStore.append(new AccountOpened(id, initialBalance, Instant.now()));
         Account account = new Account(id, initialBalance);
         accounts.put(id, account);
-        logger.info("Created account {} with initial balance {}", id, initialBalance);
+        if (holder != null) {
+            assignHolder(id, holder);
+        }
+        logger.info("Created account {} with initial balance {} and holder {}", id, initialBalance, holder);
+        return account;
+    }
+
+    /** Da um titular a uma conta que ainda nao tem: o vinculo e definido uma vez. */
+    public Account assignHolder(String accountId, String holder) {
+        Account account = getAccount(accountId);
+        if (account.getHolder() != null) {
+            throw new AccountAlreadyHasHolderException(accountId);
+        }
+        eventStore.append(new AccountHolderAssigned(accountId, holder, Instant.now()));
+        account.assignHolder(holder);
+        logger.info("Assigned account {} to holder {}", accountId, holder);
         return account;
     }
 
@@ -48,6 +72,28 @@ public class AccountService implements JournalRebuildable {
             throw new AccountNotFoundException(accountId);
         }
         return account;
+    }
+
+    /** A conta, se o ator pode enxerga-la; tirar dinheiro dela passa por aqui. */
+    public Account getAccountFor(Actor actor, String accountId) {
+        Account account = getAccount(accountId);
+        if (!actor.privileged() && !account.heldBy(actor.subject())) {
+            throw new AccountAccessDeniedException("Account " + accountId + " belongs to another holder");
+        }
+        return account;
+    }
+
+    public boolean canAccess(Actor actor, String accountId) {
+        Account account = accounts.get(accountId);
+        return account != null && (actor.privileged() || account.heldBy(actor.subject()));
+    }
+
+    /** As contas do titular, em ordem estavel de id. */
+    public List<Account> accountsOf(String holder) {
+        return accounts.values().stream()
+            .filter(account -> account.heldBy(holder))
+            .sorted(Comparator.comparing(Account::getId))
+            .toList();
     }
 
     public Account credit(String accountId, BigDecimal amount) {
@@ -93,6 +139,7 @@ public class AccountService implements JournalRebuildable {
     private void apply(MoneyEvent event) {
         switch (event) {
             case AccountOpened e -> accounts.put(e.accountId(), new Account(e.accountId(), e.initialBalance()));
+            case AccountHolderAssigned e -> account(e.accountId()).assignHolder(e.holder());
             case FundsCredited e -> account(e.accountId()).credit(e.amount());
             case FundsDebited e -> account(e.accountId()).debit(e.amount());
             case TransferCompleted e -> {
