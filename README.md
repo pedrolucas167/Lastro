@@ -5,7 +5,7 @@
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](./LICENSE)
 [![Java](https://img.shields.io/badge/Java-25-orange.svg)](https://openjdk.org/projects/jdk/25/)
 
-> **Status: experimental (v0.x).** O núcleo de matching é correto sob concorrência e durável via journal + replay, mas isto **não é production-ready**: a API ainda não tem autenticação, e não há conectividade de mercado (feed/FIX) nem clearing/settlement. Use por sua conta e risco.
+> **Status: experimental (v0.x).** O núcleo de matching é correto sob concorrência e durável via journal + replay. A API exige autenticação (JWT do Keycloak), mas a autorização por papel ainda é grosseira — qualquer token válido do realm acessa qualquer rota. Isto **não é production-ready**: não há conectividade de mercado (feed/FIX) nem clearing/settlement. Use por sua conta e risco.
 
 Plataforma de trading de mercado de capitais para testar concorrência e escalabilidade em matching engines, construída com rigor de nível institucional.
 
@@ -46,6 +46,7 @@ O Lastro é uma plataforma de trading de mercado de capitais estruturada como um
 - **Event Journal**: Persistência append-only de eventos de domínio, com replay no startup
 - **Actuator**: Health checks e métricas de produção (Prometheus)
 - **OpenAPI**: Documentação automática da API em Swagger UI
+- **Keycloak**: Provedor de identidade que emite os JWTs; a API só os valida (resource server)
 
 ## Estrutura do Projeto
 
@@ -59,13 +60,15 @@ src/main/java/io/github/pedrolucas167/lastro/
 ├── journal/          # Journal append-only de eventos (persistência + auditoria)
 ├── dto/              # Data Transfer Objects
 ├── exception/        # Exceções customizadas
-├── config/           # Configurações (Logging, OpenAPI)
+├── config/           # Configurações (Logging, OpenAPI, Segurança)
 └── LastroApplication.java
 
 src/test/java/io/github/pedrolucas167/lastro/
 ├── domain/           # Testes de domínio
 ├── service/          # Testes de services
 └── concurrency/      # Testes de concorrência
+
+deploy/keycloak/      # Realm de desenvolvimento (papéis, clientes e usuário de demo)
 ```
 
 ## Mercado de Capitais
@@ -117,7 +120,7 @@ Seis cenários, de 10 a 1.000 threads e até 20.000 ordens, validam que o sistem
 
 - Java 25
 - Maven 3.x
-- Docker (opcional: para Postgres via `docker compose`; sem ele a aplicação usa um H2 embutido em memória)
+- Docker (necessário para o Keycloak, que emite os tokens; opcional para o Postgres — sem ele a aplicação usa um H2 embutido em memória)
 
 ### Iniciar a Aplicação
 
@@ -126,6 +129,45 @@ Seis cenários, de 10 a 1.000 threads e até 20.000 ordens, validam que o sistem
 ```
 
 A API estará disponível em `http://localhost:8080`
+
+### Autenticação
+
+A API é um **resource server OAuth2**: toda rota exige um JWT emitido pelo Keycloak, exceto `GET /actuator/health`, que é público para o HEALTHCHECK do container. A aplicação **não é** o provedor de identidade — só valida tokens (JWKS do Keycloak, emissor verificado).
+
+O realm de desenvolvimento (`lastro`, em `deploy/keycloak/lastro-realm.json`) já traz os papéis e clientes usados pelo projeto:
+
+| Papel | Para quem |
+|-------|-----------|
+| `lastro-service` | chamadas de serviço (M2M) — é o papel do load generator |
+| `lastro-operator` | operação por pessoas |
+
+```bash
+docker compose up -d keycloak   # Keycloak em http://localhost:8090 (admin/admin)
+```
+
+Token de serviço (client credentials) e uma chamada autenticada:
+
+```bash
+TOKEN=$(curl -s -X POST "http://localhost:8090/realms/lastro/protocol/openid-connect/token" \
+  -d "grant_type=client_credentials" \
+  -d "client_id=lastro-service" \
+  -d "client_secret=lastro-service-secret" | jq -r .access_token)
+
+curl -H "Authorization: Bearer $TOKEN" http://localhost:8080/api/trading/trades
+```
+
+Para um token de operador (senha `operador`), troque o grant:
+
+```bash
+curl -s -X POST "http://localhost:8090/realms/lastro/protocol/openid-connect/token" \
+  -d "grant_type=password&client_id=lastro-operator&username=operador&password=operador&scope=openid"
+```
+
+Sem token a API responde `401`. As credenciais acima são de desenvolvimento — em produção, use um Keycloak próprio e outro segredo de cliente.
+
+Para apontar para outro Keycloak, defina `spring.security.oauth2.resourceserver.jwt.issuer-uri` e `spring.security.oauth2.resourceserver.jwt.jwk-set-uri` (ou as variáveis de ambiente equivalentes). O `issuer-uri` é só validado, o JWKS é buscado sob demanda — a aplicação sobe mesmo com o Keycloak fora do ar.
+
+No Swagger UI, use **Authorize** e cole o token.
 
 ### Persistência
 
@@ -145,7 +187,8 @@ Para usar um Postgres próprio, defina `spring.datasource.url`, `spring.datasour
 ### Executar Load Test
 
 ```bash
-curl -X POST "http://localhost:8080/api/loadtest/run?numAccounts=10&numTransfers=1000&concurrency=10&metricsIntervalMs=100"
+curl -X POST -H "Authorization: Bearer $TOKEN" \
+  "http://localhost:8080/api/loadtest/run?numAccounts=10&numTransfers=1000&concurrency=10&metricsIntervalMs=100"
 ```
 
 Parâmetros:
@@ -157,10 +200,12 @@ Parâmetros:
 ### Ver Métricas
 
 ```bash
-curl http://localhost:8080/api/loadtest/metrics
+curl -H "Authorization: Bearer $TOKEN" http://localhost:8080/api/loadtest/metrics
 ```
 
 ## API Endpoints
+
+Todas as rotas abaixo exigem `Authorization: Bearer <token>`; a única exceção é `GET /actuator/health`.
 
 ### Trading
 
@@ -193,10 +238,10 @@ curl http://localhost:8080/api/loadtest/metrics
 
 ### Health & Metrics
 
-- `GET /actuator/health` - Health check
+- `GET /actuator/health` - Health check (público; detalhes só para quem está autenticado)
 - `GET /actuator/metrics` - Métricas JVM
 - `GET /actuator/prometheus` - Métricas Prometheus
-- `GET /swagger-ui.html` - Documentação Swagger UI
+- `GET /swagger-ui.html` - Documentação Swagger UI (requer token: use **Authorize**)
 - `GET /v3/api-docs` - Especificação OpenAPI
 
 ## Roadmap

@@ -16,6 +16,24 @@ services:
       timeout: 3s
       retries: 10
 
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.8
+    container_name: lastro-keycloak
+    # start-dev: sem TLS, com banco embutido e import do realm de deploy/keycloak/.
+    # Só para desenvolvimento -- em produção use um Keycloak gerenciado.
+    command: ["start-dev", "--import-realm"]
+    environment:
+      KC_BOOTSTRAP_ADMIN_USERNAME: admin
+      KC_BOOTSTRAP_ADMIN_PASSWORD: admin
+      # O emissor (iss) fica fixo para host e container: a API fora do Docker também
+      # aceita os tokens, porque valida o emissor, não a URL de onde o token veio.
+      KC_HOSTNAME: http://localhost:8090
+    ports:
+      - "8090:8080"
+    volumes:
+      - ./deploy/keycloak:/opt/keycloak/data/import:ro
+    restart: unless-stopped
+
   lastro:
     build:
       context: .
@@ -34,6 +52,10 @@ services:
       SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/lastro
       SPRING_DATASOURCE_USERNAME: lastro
       SPRING_DATASOURCE_PASSWORD: lastro
+      # Autenticação: o emissor continua http://localhost:8090/realms/lastro (fixado no
+      # Keycloak); só a busca do JWKS e do token usam o nome do serviço na rede do compose.
+      SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_JWK_SET_URI: http://keycloak:8080/realms/lastro/protocol/openid-connect/certs
+      LASTRO_LOADTEST_TOKEN_URI: http://keycloak:8080/realms/lastro/protocol/openid-connect/token
       # Descomente para permitir ordens fora do horário de mercado (demos/testes):
       # LASTRO_MARKET_ENABLED: "false"
     restart: unless-stopped
