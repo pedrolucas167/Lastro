@@ -2,7 +2,7 @@
 
 ## Estado do projeto
 
-O Lastro é **experimental** e **não é production-ready**. A API exige autenticação (JWT do Keycloak), mas a autorização ainda é grosseira: **qualquer token válido do realm acessa qualquer rota**, sem vínculo entre conta e portador — quem tem um token pode criar ordens e movimentar contas de terceiros. Não exponha a aplicação a redes não confiáveis.
+O Lastro é **experimental** e **não é production-ready**. A API exige autenticação (JWT do Keycloak) e autoriza por papel — o cliente M2M só abre conta e transfere; saldo, ordens, carga e halt exigem operador. O que **não** existe é vínculo entre conta e portador: qualquer operador movimenta qualquer conta. Não exponha a aplicação a redes não confiáveis.
 
 ## Versões suportadas
 

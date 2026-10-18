@@ -52,4 +52,17 @@ class JdbcEventStoreTest {
         assertEquals(new FundsCredited("acc-1", new BigDecimal("250.00"), openedAt.plusSeconds(60)), events.get(1));
         assertEquals(new FundsDebited("acc-1", new BigDecimal("50.00"), openedAt.plusSeconds(120)), events.get(2));
     }
+
+    @Test
+    void roundTripsMarketHaltEvents() {
+        Instant haltedAt = Instant.parse("2026-01-01T10:00:00Z");
+        eventStore.append(new SymbolHalted("PETR4", "circuito de protecao", haltedAt));
+        eventStore.append(new SymbolResumed("PETR4", haltedAt.plusSeconds(600)));
+
+        List<DomainEvent> events = eventStore.readAll();
+
+        assertEquals(2, events.size());
+        assertEquals(new SymbolHalted("PETR4", "circuito de protecao", haltedAt), events.get(0));
+        assertEquals(new SymbolResumed("PETR4", haltedAt.plusSeconds(600)), events.get(1));
+    }
 }

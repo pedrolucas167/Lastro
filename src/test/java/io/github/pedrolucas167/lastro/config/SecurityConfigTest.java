@@ -1,5 +1,6 @@
 package io.github.pedrolucas167.lastro.config;
 
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -30,6 +31,13 @@ class SecurityConfigTest {
     @MockitoBean
     private JwtDecoder jwtDecoder;
 
+    @BeforeEach
+    void setUp() {
+        given(jwtDecoder.decode("invalido")).willThrow(new BadJwtException("token inválido"));
+        given(jwtDecoder.decode("operador")).willReturn(jwtWithRoles("lastro-operator"));
+        given(jwtDecoder.decode("sem-papel")).willReturn(jwtWithRoles());
+    }
+
     @Test
     @DisplayName("O /actuator/health é público: o HEALTHCHECK do container não tem token")
     void healthIsPublic() throws Exception {
@@ -57,28 +65,31 @@ class SecurityConfigTest {
     @Test
     @DisplayName("A API recusa token inválido (assinatura, emissor ou expiração)")
     void apiRejectsInvalidToken() throws Exception {
-        given(jwtDecoder.decode("invalido")).willThrow(new BadJwtException("token inválido"));
-
         mockMvc.perform(get("/api/trading/trades").header("Authorization", "Bearer invalido"))
             .andExpect(status().isUnauthorized());
     }
 
     @Test
-    @DisplayName("A API aceita token válido emitido pelo Keycloak")
+    @DisplayName("A API aceita token válido com papel do realm")
     void apiAcceptsKeycloakToken() throws Exception {
-        given(jwtDecoder.decode("valido")).willReturn(serviceAccountJwt());
-
-        mockMvc.perform(get("/api/trading/trades").header("Authorization", "Bearer valido"))
+        mockMvc.perform(get("/api/trading/trades").header("Authorization", "Bearer operador"))
             .andExpect(status().isOk());
     }
 
-    private Jwt serviceAccountJwt() {
-        return Jwt.withTokenValue("valido")
+    @Test
+    @DisplayName("Token válido sem papel do realm não acessa a API")
+    void tokenWithoutRealmRoleIsForbidden() throws Exception {
+        mockMvc.perform(get("/api/trading/trades").header("Authorization", "Bearer sem-papel"))
+            .andExpect(status().isForbidden());
+    }
+
+    private Jwt jwtWithRoles(String... roles) {
+        return Jwt.withTokenValue("token")
             .header("alg", "RS256")
-            .subject("service-account-lastro-service")
+            .subject("service-account-lastro")
             .issuedAt(Instant.now())
             .expiresAt(Instant.now().plusSeconds(300))
-            .claim("realm_access", Map.of("roles", List.of("lastro-service")))
+            .claim("realm_access", Map.of("roles", List.of(roles)))
             .build();
     }
 }

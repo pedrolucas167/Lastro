@@ -97,7 +97,7 @@ class TradingJournalReplayTest {
 
     private TradingService newTradingService(EventStore eventStore) {
         RegulatoryValidationService validation = new RegulatoryValidationService(
-            new PriceBandProperties(), false, true, "00:00", "23:59");
+            new MarketHaltService(eventStore), new PriceBandProperties(), false, true, "00:00", "23:59");
         return new TradingService(new MatchingEngine(), new OrderService(eventStore),
             new PositionService(), new MetricsCollector(), validation, eventStore);
     }
