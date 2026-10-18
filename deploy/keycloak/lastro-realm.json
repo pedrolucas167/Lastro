@@ -1,0 +1,73 @@
+{
+  "realm": "lastro",
+  "enabled": true,
+  "displayName": "Lastro",
+  "sslRequired": "none",
+  "registrationAllowed": false,
+  "loginWithEmailAllowed": true,
+  "duplicateEmailsAllowed": false,
+  "accessTokenLifespan": 300,
+  "roles": {
+    "realm": [
+      {
+        "name": "lastro-service",
+        "description": "Chamadas de servico (M2M) a API do Lastro"
+      },
+      {
+        "name": "lastro-operator",
+        "description": "Operacao da API do Lastro por pessoas"
+      }
+    ]
+  },
+  "clients": [
+    {
+      "clientId": "lastro-service",
+      "name": "Lastro - service account (M2M)",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": false,
+      "serviceAccountsEnabled": true,
+      "standardFlowEnabled": false,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "secret": "lastro-service-secret"
+    },
+    {
+      "clientId": "lastro-operator",
+      "name": "Lastro - operador (somente desenvolvimento)",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": true,
+      "serviceAccountsEnabled": false,
+      "standardFlowEnabled": true,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": true,
+      "redirectUris": ["http://localhost:8080/*"],
+      "webOrigins": ["http://localhost:8080"]
+    }
+  ],
+  "users": [
+    {
+      "username": "service-account-lastro-service",
+      "enabled": true,
+      "serviceAccountClientId": "lastro-service",
+      "realmRoles": ["lastro-service"]
+    },
+    {
+      "username": "operador",
+      "enabled": true,
+      "email": "operador@lastro.local",
+      "emailVerified": true,
+      "firstName": "Operador",
+      "lastName": "Lastro",
+      "credentials": [
+        {
+          "type": "password",
+          "value": "operador",
+          "temporary": false
+        }
+      ],
+      "realmRoles": ["lastro-operator"]
+    }
+  ]
+}

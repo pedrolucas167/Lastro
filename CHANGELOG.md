@@ -4,13 +4,15 @@ Todas as mudanças relevantes deste projeto são documentadas aqui.
 
 O formato segue [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/) e o projeto adota [Versionamento Semântico](https://semver.org/lang/pt-BR/).
 
-> ⚠️ **Experimental.** O núcleo de matching é correto sob concorrência e durável via journal + replay, mas a API **não tem autenticação** e não há conectividade de mercado (feed/FIX) nem clearing. Não use em produção.
+> ⚠️ **Experimental.** O núcleo de matching é correto sob concorrência e durável via journal + replay. A API exige autenticação (JWT do Keycloak), mas a autorização por papel ainda é grosseira, e não há conectividade de mercado (feed/FIX) nem clearing. Não use em produção.
 
 ## [Unreleased]
 
 ### Adicionado
 
 - Benchmark JMH para throughput do motor de matching e do caminho de aplicação, sob o perfil `-Pbenchmark`, com resultados e metodologia em `PERFORMANCE.md`.
+- Autenticação na API: passa a ser um resource server OAuth2 que valida JWTs do Keycloak (JWKS sob demanda, emissor verificado) e exige token em todas as rotas, exceto `GET /actuator/health`. Os papéis de `realm_access.roles` viram authorities com prefixo `ROLE_`, prontas para autorizar por papel.
+- Realm de desenvolvimento `lastro` (`deploy/keycloak/lastro-realm.json`) com os papéis `lastro-service` (M2M) e `lastro-operator`, e um cliente Keycloak para cada, subido pelo `compose.yaml`.
 
 ### Corrigido
 
@@ -22,6 +24,8 @@ O formato segue [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/) e o 
 
 - Os números de desempenho do README, de `BASELINE_CONCURRENCY.md` e de `SCALE_ANALYSIS.md` foram removidos por não serem reproduzíveis (o cenário de 50 threads divergia 106×) e substituídos por medições JMH.
 - `SCALE_ANALYSIS.md` passa a descrever o que os testes de escala validam — corretude sob carga — em vez de uma curva de escala e um diagnóstico de gargalos que o código não sustentava.
+- O load generator deixa de chamar a API sem credenciais: autentica como cliente M2M (client credentials) com a service account do Keycloak.
+- `GET /actuator/health` mostra detalhes apenas para quem está autenticado, e a especificação OpenAPI declara o esquema bearer exigido pelas rotas.
 
 ## [0.1.0] - 2026-10-17
 

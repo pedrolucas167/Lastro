@@ -24,9 +24,11 @@ public class LoadGenerator {
         .build();
 
     private final ObjectMapper objectMapper;
+    private final ServiceAccountToken serviceAccountToken;
 
-    public LoadGenerator(ObjectMapper objectMapper) {
+    public LoadGenerator(ObjectMapper objectMapper, ServiceAccountToken serviceAccountToken) {
         this.objectMapper = objectMapper;
+        this.serviceAccountToken = serviceAccountToken;
     }
 
     public LoadTestResult runTransferLoadTest(String baseUrl,
@@ -39,6 +41,7 @@ public class LoadGenerator {
         }
 
         Instant startTime = Instant.now();
+        String token = serviceAccountToken.fetch();
         AtomicLong successCount = new AtomicLong(0);
         AtomicLong failureCount = new AtomicLong(0);
         List<Long> latencies = new CopyOnWriteArrayList<>();
@@ -64,6 +67,7 @@ public class LoadGenerator {
                     HttpRequest request = HttpRequest.newBuilder()
                         .uri(URI.create(baseUrl + "/api/transactions/transfer"))
                         .header("Content-Type", "application/json")
+                        .header("Authorization", "Bearer " + token)
                         .POST(HttpRequest.BodyPublishers.ofString(body))
                         .build();
 
@@ -115,6 +119,7 @@ public class LoadGenerator {
     public List<String> createTestAccounts(String baseUrl, int numAccounts) throws Exception {
         ExecutorService executor = Executors.newFixedThreadPool(Math.max(1, Math.min(10, numAccounts)));
         List<Future<String>> futures = new ArrayList<>();
+        String token = serviceAccountToken.fetch();
 
         for (int i = 0; i < numAccounts; i++) {
             final int accountId = i;
@@ -126,6 +131,7 @@ public class LoadGenerator {
                     HttpRequest request = HttpRequest.newBuilder()
                         .uri(URI.create(baseUrl + "/api/accounts"))
                         .header("Content-Type", "application/json")
+                        .header("Authorization", "Bearer " + token)
                         .POST(HttpRequest.BodyPublishers.ofString(body))
                         .build();
 
