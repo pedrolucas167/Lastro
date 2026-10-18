@@ -42,25 +42,25 @@ public class TradingService implements JournalRebuildable {
         this.eventStore = eventStore;
     }
 
-    public OrderExecutionResult submitOrder(String symbol, OrderSide side, OrderType type,
+    public OrderExecutionResult submitOrder(Actor actor, String symbol, OrderSide side, OrderType type,
                                    BigDecimal price, int quantity, String accountId,
                                    TimeInForce timeInForce) {
         regulatoryValidationService.validateOrder(symbol, side, type, price, quantity, accountId);
         
         // O OrderService registra o OrderSubmitted no journal ao criar a ordem.
-        Order order = orderService.createOrder(symbol, side, type, price, quantity, accountId, timeInForce);
+        Order order = orderService.createOrder(actor, symbol, side, type, price, quantity, accountId, timeInForce);
         
         List<Trade> trades = matchingEngine.submitOrder(order);
         
         if (!trades.isEmpty()) {
-            recordTrades(trades);
+            recordTrades(actor, trades);
             logger.info("Order {} generated {} trades", order.getId(), trades.size());
         }
         
         return new OrderExecutionResult(order, trades);
     }
 
-    public Optional<OrderExecutionResult> replaceOrder(String orderId, String symbol,
+    public Optional<OrderExecutionResult> replaceOrder(Actor actor, String orderId, String symbol,
                                                       BigDecimal newPrice, Integer newQuantity) {
         Order order = orderService.getOrder(orderId);
         if (order == null) {
@@ -74,7 +74,7 @@ public class TradingService implements JournalRebuildable {
             price, quantity, order.getAccountId());
 
         BigDecimal amendedQuantity = new BigDecimal(quantity);
-        eventStore.append(new OrderReplaced(orderId, symbol, price, amendedQuantity, Instant.now()));
+        eventStore.append(new OrderReplaced(orderId, symbol, price, amendedQuantity, actor, Instant.now()));
 
         Optional<List<Trade>> generatedTrades =
             matchingEngine.replaceOrder(orderId, symbol, price, amendedQuantity);
@@ -83,24 +83,25 @@ public class TradingService implements JournalRebuildable {
         }
 
         List<Trade> trades = generatedTrades.get();
-        recordTrades(trades);
+        recordTrades(actor, trades);
         logger.info("Order {} replaced and generated {} trades", orderId, trades.size());
 
         return Optional.of(new OrderExecutionResult(order, trades));
     }
 
-    private void recordTrades(List<Trade> trades) {
+    /** O trade e causado pela ordem que chegou: o ator que a enviou e o ator do fato. */
+    private void recordTrades(Actor actor, List<Trade> trades) {
         for (Trade trade : trades) {
             eventStore.append(new TradeExecuted(trade.getId(), trade.getSymbol(),
                 trade.getBuyOrderId(), trade.getSellOrderId(), trade.getPrice(), trade.getQuantity(),
-                trade.getBuyAccountId(), trade.getSellAccountId(), trade.getTimestamp()));
+                trade.getBuyAccountId(), trade.getSellAccountId(), actor, trade.getTimestamp()));
             positionService.processTrade(trade);
             metricsCollector.recordTrade(trade);
         }
     }
 
-    public boolean cancelOrder(String orderId, String symbol) {
-        eventStore.append(new OrderCancelled(orderId, symbol, Instant.now()));
+    public boolean cancelOrder(Actor actor, String orderId, String symbol) {
+        eventStore.append(new OrderCancelled(orderId, symbol, actor, Instant.now()));
         return matchingEngine.cancelOrder(orderId, symbol);
     }
 

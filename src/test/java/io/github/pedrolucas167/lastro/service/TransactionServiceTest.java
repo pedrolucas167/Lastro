@@ -9,19 +9,22 @@ import io.github.pedrolucas167.lastro.exception.AccountAccessDeniedException;
 import io.github.pedrolucas167.lastro.exception.TransactionFailedException;
 import io.github.pedrolucas167.lastro.journal.EventStore;
 import io.github.pedrolucas167.lastro.journal.InMemoryEventStore;
+import io.github.pedrolucas167.lastro.journal.TransferCompleted;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.DisplayName;
 
 import java.math.BigDecimal;
+import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.*;
 
 class TransactionServiceTest {
     /** O back office opera qualquer conta; o titular apenas as que tem. */
-    private static final Actor BACK_OFFICE = new Actor("operador", true);
-    private static final Actor HOLDER = new Actor("cliente-1", false);
+    private static final Actor BACK_OFFICE = new Actor("operador", Set.of(Actor.OPERATOR));
+    private static final Actor HOLDER = new Actor("cliente-1", Set.of(Actor.HOLDER));
 
+    private EventStore eventStore;
     private AccountService accountService;
     private TransactionService transactionService;
     private Account fromAccount;
@@ -29,13 +32,13 @@ class TransactionServiceTest {
 
     @BeforeEach
     void setUp() {
-        EventStore eventStore = new InMemoryEventStore();
+        eventStore = new InMemoryEventStore();
         accountService = new AccountService(eventStore);
         IdempotencyService idempotencyService = new IdempotencyService();
         transactionService = new TransactionService(accountService, idempotencyService, eventStore);
         
-        fromAccount = accountService.createAccount(new BigDecimal("1000.00"));
-        toAccount = accountService.createAccount(new BigDecimal("500.00"));
+        fromAccount = accountService.createAccount(BACK_OFFICE, new BigDecimal("1000.00"));
+        toAccount = accountService.createAccount(BACK_OFFICE, new BigDecimal("500.00"));
     }
 
     @Test
@@ -158,8 +161,8 @@ class TransactionServiceTest {
     @Test
     @DisplayName("O titular tira dinheiro da própria conta, não da conta dos outros")
     void holderCanOnlyTransferFromOwnAccount() {
-        Account mine = accountService.createAccount(new BigDecimal("100.00"), "cliente-1");
-        Account other = accountService.createAccount(new BigDecimal("100.00"), "cliente-2");
+        Account mine = accountService.createAccount(BACK_OFFICE, new BigDecimal("100.00"), "cliente-1");
+        Account other = accountService.createAccount(BACK_OFFICE, new BigDecimal("100.00"), "cliente-2");
 
         Transaction transaction = transactionService.transfer(
             HOLDER, mine.getId(), other.getId(), new BigDecimal("30.00"));
@@ -176,8 +179,8 @@ class TransactionServiceTest {
     @Test
     @DisplayName("Conta sem titular é do back office: o titular não alcança")
     void holderCannotReachAccountWithoutHolder() {
-        Account unassigned = accountService.createAccount(new BigDecimal("100.00"));
-        Account mine = accountService.createAccount(new BigDecimal("100.00"), "cliente-1");
+        Account unassigned = accountService.createAccount(BACK_OFFICE, new BigDecimal("100.00"));
+        Account mine = accountService.createAccount(BACK_OFFICE, new BigDecimal("100.00"), "cliente-1");
 
         assertThrows(AccountAccessDeniedException.class,
             () -> transactionService.transfer(HOLDER, unassigned.getId(), mine.getId(), new BigDecimal("10.00")));
@@ -186,9 +189,9 @@ class TransactionServiceTest {
     @Test
     @DisplayName("O titular vê a transação que toca a conta dele e nada além")
     void holderOnlySeesTransactionsTouchingOwnAccount() {
-        Account mine = accountService.createAccount(new BigDecimal("100.00"), "cliente-1");
-        Account other = accountService.createAccount(new BigDecimal("100.00"), "cliente-2");
-        Account third = accountService.createAccount(new BigDecimal("100.00"), "cliente-3");
+        Account mine = accountService.createAccount(BACK_OFFICE, new BigDecimal("100.00"), "cliente-1");
+        Account other = accountService.createAccount(BACK_OFFICE, new BigDecimal("100.00"), "cliente-2");
+        Account third = accountService.createAccount(BACK_OFFICE, new BigDecimal("100.00"), "cliente-3");
 
         Transaction received = transactionService.transfer(
             BACK_OFFICE, other.getId(), mine.getId(), new BigDecimal("10.00"));
@@ -199,5 +202,17 @@ class TransactionServiceTest {
             transactionService.getTransaction(HOLDER, received.getId()).getId());
         assertThrows(AccountAccessDeniedException.class,
             () -> transactionService.getTransaction(HOLDER, unrelated.getId()));
+    }
+
+    @Test
+    @DisplayName("Grava no journal quem transferiu, com os papéis daquele momento")
+    void journalsWhoTransferredAndTheirRoles() {
+        Account mine = accountService.createAccount(BACK_OFFICE, new BigDecimal("100.00"), HOLDER.subject());
+
+        transactionService.transfer(HOLDER, mine.getId(), toAccount.getId(), new BigDecimal("10.00"));
+
+        // O ator e o titular com o papel que ele carregava: papel revogado depois nao reescreve o fato.
+        TransferCompleted event = (TransferCompleted) eventStore.readAll().getLast();
+        assertEquals(HOLDER, event.actor());
     }
 }

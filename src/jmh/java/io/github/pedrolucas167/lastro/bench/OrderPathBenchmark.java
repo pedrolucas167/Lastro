@@ -1,5 +1,6 @@
 package io.github.pedrolucas167.lastro.bench;
 
+import io.github.pedrolucas167.lastro.domain.Actor;
 import io.github.pedrolucas167.lastro.domain.Order;
 import io.github.pedrolucas167.lastro.domain.OrderSide;
 import io.github.pedrolucas167.lastro.domain.OrderType;
@@ -23,6 +24,7 @@ import org.openjdk.jmh.annotations.Warmup;
 
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.util.Set;
 import java.util.concurrent.TimeUnit;
 
 /**
@@ -43,6 +45,7 @@ import java.util.concurrent.TimeUnit;
 public class OrderPathBenchmark {
 
     private static final BigDecimal PRICE = new BigDecimal("30.00");
+    private static final Actor BENCH_ACTOR = new Actor("benchmark", Set.of(Actor.OPERATOR));
 
     @State(Scope.Benchmark)
     public static class PathState {
@@ -61,14 +64,14 @@ public class OrderPathBenchmark {
     @Benchmark
     public OrderSubmitted journalAppend(PathState state) {
         OrderSubmitted event = new OrderSubmitted("o" + state.sequence++, "PETR4", OrderSide.BUY,
-            OrderType.LIMIT, PRICE, 10, "acc", TimeInForce.GTC, Instant.now());
+            OrderType.LIMIT, PRICE, 10, "acc", TimeInForce.GTC, BENCH_ACTOR, Instant.now());
         state.eventStore.append(event);
         return event;
     }
 
     @Benchmark
     public Order createOrder(PathState state) {
-        return state.orderService.createOrder("PETR4", OrderSide.BUY, OrderType.LIMIT, PRICE, 10,
+        return state.orderService.createOrder(BENCH_ACTOR, "PETR4", OrderSide.BUY, OrderType.LIMIT, PRICE, 10,
             "acc-" + state.sequence++);
     }
 }

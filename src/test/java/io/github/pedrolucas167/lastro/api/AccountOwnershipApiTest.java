@@ -21,6 +21,7 @@ import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 import static org.hamcrest.Matchers.hasSize;
 import static org.mockito.BDDMockito.given;
@@ -36,6 +37,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @SpringBootTest
 @AutoConfigureMockMvc
 class AccountOwnershipApiTest {
+    /** O back office abre as contas dos outros: o titular nao abre conta para ninguem. */
+    private static final Actor BACK_OFFICE = new Actor("operador", Set.of(Actor.OPERATOR));
     private static final String HOLDER_ONE = "Bearer cliente-1";
     private static final String HOLDER_TWO = "Bearer cliente-2";
     private static final String OPERATOR = "Bearer operador";
@@ -62,8 +65,8 @@ class AccountOwnershipApiTest {
     @Test
     @DisplayName("O titular lê a própria conta e não a dos outros")
     void holderReadsOnlyOwnAccount() throws Exception {
-        String mine = accountService.createAccount(new BigDecimal("100.00"), "cliente-1").getId();
-        String other = accountService.createAccount(new BigDecimal("100.00"), "cliente-2").getId();
+        String mine = accountService.createAccount(BACK_OFFICE, new BigDecimal("100.00"), "cliente-1").getId();
+        String other = accountService.createAccount(BACK_OFFICE, new BigDecimal("100.00"), "cliente-2").getId();
 
         mockMvc.perform(get("/api/accounts/" + mine).header("Authorization", HOLDER_ONE))
             .andExpect(status().isOk())
@@ -76,8 +79,8 @@ class AccountOwnershipApiTest {
     @Test
     @DisplayName("O titular transfere da própria conta e não da conta dos outros")
     void holderTransfersOnlyFromOwnAccount() throws Exception {
-        String mine = accountService.createAccount(new BigDecimal("100.00"), "cliente-1").getId();
-        String other = accountService.createAccount(new BigDecimal("100.00"), "cliente-2").getId();
+        String mine = accountService.createAccount(BACK_OFFICE, new BigDecimal("100.00"), "cliente-1").getId();
+        String other = accountService.createAccount(BACK_OFFICE, new BigDecimal("100.00"), "cliente-2").getId();
 
         mockMvc.perform(post("/api/transactions/transfer")
                 .header("Authorization", HOLDER_ONE)
@@ -97,10 +100,10 @@ class AccountOwnershipApiTest {
     @Test
     @DisplayName("O titular lê a transação que tocou a conta dele, e só ela")
     void holderReadsOnlyTransactionsTouchingOwnAccount() throws Exception {
-        Account mine = accountService.createAccount(new BigDecimal("100.00"), "cliente-1");
-        Account other = accountService.createAccount(new BigDecimal("100.00"), "cliente-2");
-        Account third = accountService.createAccount(new BigDecimal("100.00"), "cliente-3");
-        Actor backOffice = new Actor("operador-1", true);
+        Account mine = accountService.createAccount(BACK_OFFICE, new BigDecimal("100.00"), "cliente-1");
+        Account other = accountService.createAccount(BACK_OFFICE, new BigDecimal("100.00"), "cliente-2");
+        Account third = accountService.createAccount(BACK_OFFICE, new BigDecimal("100.00"), "cliente-3");
+        Actor backOffice = new Actor("operador-1", Set.of(Actor.OPERATOR));
 
         Transaction received = transactionService.transfer(
             backOffice, other.getId(), mine.getId(), new BigDecimal("10.00"));
@@ -131,8 +134,8 @@ class AccountOwnershipApiTest {
     @DisplayName("A lista do titular traz apenas as contas que ele tem")
     void holderListsOnlyOwnAccounts() throws Exception {
         given(jwtDecoder.decode("cliente-lista")).willReturn(jwt("cliente-lista", "lastro-holder"));
-        String mine = accountService.createAccount(new BigDecimal("100.00"), "cliente-lista").getId();
-        accountService.createAccount(new BigDecimal("100.00"), "cliente-outro");
+        String mine = accountService.createAccount(BACK_OFFICE, new BigDecimal("100.00"), "cliente-lista").getId();
+        accountService.createAccount(BACK_OFFICE, new BigDecimal("100.00"), "cliente-outro");
 
         mockMvc.perform(get("/api/accounts/mine").header("Authorization", "Bearer cliente-lista"))
             .andExpect(status().isOk())
@@ -143,7 +146,7 @@ class AccountOwnershipApiTest {
     @Test
     @DisplayName("O operador define o titular uma vez e não troca depois")
     void operatorAssignsHolderOnce() throws Exception {
-        String accountId = accountService.createAccount(new BigDecimal("100.00")).getId();
+        String accountId = accountService.createAccount(BACK_OFFICE, new BigDecimal("100.00")).getId();
 
         mockMvc.perform(post("/api/accounts/" + accountId + "/holder")
                 .header("Authorization", OPERATOR)

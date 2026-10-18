@@ -4,9 +4,18 @@ Todas as mudanças relevantes deste projeto são documentadas aqui.
 
 O formato segue [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/) e o projeto adota [Versionamento Semântico](https://semver.org/lang/pt-BR/).
 
-> ⚠️ **Experimental.** O núcleo de matching é correto sob concorrência e durável via journal + replay. A API exige autenticação (JWT do Keycloak), autoriza por papel na rota e por titular na conta, mas não há entidade de cliente (KYC), limites por titular, ator no journal nem conectividade de mercado (feed/FIX) e clearing. Não use em produção.
+> ⚠️ **Experimental.** O núcleo de matching é correto sob concorrência e durável via journal + replay. A API exige autenticação (JWT do Keycloak), autoriza por papel na rota e por titular na conta, e cada evento do journal grava o ator (o `sub` e os papéis daquele momento), mas não há entidade de cliente (KYC), limites por titular nem conectividade de mercado (feed/FIX) e clearing. Não use em produção.
 
 ## [Unreleased]
+
+### Adicionado
+
+- Cada evento do journal passa a gravar **quem o causou** — o `sub` do token e os papéis que a identidade carregava naquele momento — resolvido na borda e passado explícito ao serviço. Antes o journal dizia o que aconteceu, não quem fez; era o gap de auditoria declarado no README.
+
+### Alterado
+
+- `Actor` deixou de ser `(subject, privileged)` e passou a ser `(subject, roles)`, com "privilegiado" derivado dos papéis. O journal precisa da autoridade do momento: um booleano não distingue operador de serviço M2M, e papel revogado depois apagaria a informação. O vocabulário de papéis (`lastro-service`, `lastro-operator`, `lastro-holder`) saiu de `config.Roles` para `domain.Actor`, que é quem os carrega; `config.Roles` ficou só com a leitura do token. A matriz de rotas não mudou.
+- Journal gravado antes deste campo (payload sem `actor`) continua replayando, com o ator vazio — o replay não depende dele.
 
 ## [0.3.0] - 2026-10-18
 

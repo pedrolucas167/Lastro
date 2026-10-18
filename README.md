@@ -5,7 +5,7 @@
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](./LICENSE)
 [![Java](https://img.shields.io/badge/Java-25-orange.svg)](https://openjdk.org/projects/jdk/25/)
 
-> **Status: experimental (v0.x).** O núcleo de matching é correto sob concorrência e durável via journal + replay. A API exige autenticação (JWT do Keycloak), autoriza por papel na rota e por titular na conta — o titular só alcança as contas que tem, enquanto operador e M2M são o balcão e movimentam qualquer conta. Isto **não é production-ready**: não há entidade de cliente (KYC), limites por titular, ator no journal nem conectividade de mercado (feed/FIX) e clearing/settlement. Use por sua conta e risco.
+> **Status: experimental (v0.x).** O núcleo de matching é correto sob concorrência e durável via journal + replay. A API exige autenticação (JWT do Keycloak), autoriza por papel na rota e por titular na conta — o titular só alcança as contas que tem, enquanto operador e M2M são o balcão e movimentam qualquer conta — e cada evento do journal grava quem o causou. Isto **não é production-ready**: não há entidade de cliente (KYC), limites por titular nem conectividade de mercado (feed/FIX) e clearing/settlement. Use por sua conta e risco.
 
 Plataforma de trading de mercado de capitais para testar concorrência e escalabilidade em matching engines, construída com rigor de nível institucional.
 
@@ -200,6 +200,8 @@ No Swagger UI, use **Authorize** e cole o token.
 ### Persistência
 
 Cada mudança de estado — movimento de dinheiro (conta aberta, titular definido, crédito, débito, transferência), atividade do engine (ordens enviadas, canceladas, substituídas e trades executados) e controle de mercado (halt/resume por símbolo) — é registrada como um **evento imutável** em um **journal append-only**. No startup, o estado em memória é reconstruído a partir do journal: as contas e transações são reaplicadas, o engine **reexecuta os comandos na mesma ordem** (restaurando o book com prioridade preço-tempo, as posições e os trades) e os símbolos pausados voltam pausados — os dados sobrevivem a reinícios e o próprio journal serve como trilha de auditoria.
+
+Cada evento grava **quem o causou**: o `sub` do token e os papéis que a identidade carregava naquele momento. A autoridade fica no fato, não na configuração de hoje — revogar um papel amanhã não reescreve quem podia o quê ontem. Eventos gravados antes disso (journal anterior a este campo) replayam com o ator vazio; o replay não depende dele.
 
 - **Desenvolvimento/testes**: H2 embutido em memória, sem configuração.
 - **Produção/demo**: Postgres via Compose:

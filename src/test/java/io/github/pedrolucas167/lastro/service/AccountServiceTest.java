@@ -13,10 +13,13 @@ import org.junit.jupiter.api.DisplayName;
 
 import java.math.BigDecimal;
 import java.util.List;
+import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.*;
 
 class AccountServiceTest {
+    private static final Actor OPERATOR = new Actor("operador", Set.of(Actor.OPERATOR));
+
     private AccountService accountService;
 
     @BeforeEach
@@ -27,7 +30,7 @@ class AccountServiceTest {
     @Test
     @DisplayName("Deve criar conta com saldo inicial")
     void shouldCreateAccountWithInitialBalance() {
-        Account account = accountService.createAccount(new BigDecimal("1000.00"));
+        Account account = accountService.createAccount(OPERATOR, new BigDecimal("1000.00"));
         
         assertNotNull(account);
         assertNotNull(account.getId());
@@ -37,7 +40,7 @@ class AccountServiceTest {
     @Test
     @DisplayName("Deve buscar conta existente")
     void shouldGetExistingAccount() {
-        Account created = accountService.createAccount(new BigDecimal("500.00"));
+        Account created = accountService.createAccount(OPERATOR, new BigDecimal("500.00"));
         Account retrieved = accountService.getAccount(created.getId());
         
         assertNotNull(retrieved);
@@ -57,8 +60,8 @@ class AccountServiceTest {
     @Test
     @DisplayName("Deve creditar valor em conta existente")
     void shouldCreditAmountToExistingAccount() {
-        Account account = accountService.createAccount(new BigDecimal("1000.00"));
-        Account updated = accountService.credit(account.getId(), new BigDecimal("500.00"));
+        Account account = accountService.createAccount(OPERATOR, new BigDecimal("1000.00"));
+        Account updated = accountService.credit(OPERATOR, account.getId(), new BigDecimal("500.00"));
         
         assertEquals(new BigDecimal("1500.00"), updated.getBalance());
     }
@@ -68,15 +71,15 @@ class AccountServiceTest {
     void shouldThrowExceptionWhenCreditingNonExistentAccount() {
         assertThrows(
             AccountNotFoundException.class,
-            () -> accountService.credit("non-existent", new BigDecimal("100.00"))
+            () -> accountService.credit(OPERATOR, "non-existent", new BigDecimal("100.00"))
         );
     }
 
     @Test
     @DisplayName("Deve debitar valor de conta existente com saldo suficiente")
     void shouldDebitAmountFromExistingAccountWithSufficientBalance() {
-        Account account = accountService.createAccount(new BigDecimal("1000.00"));
-        Account updated = accountService.debit(account.getId(), new BigDecimal("300.00"));
+        Account account = accountService.createAccount(OPERATOR, new BigDecimal("1000.00"));
+        Account updated = accountService.debit(OPERATOR, account.getId(), new BigDecimal("300.00"));
         
         assertEquals(new BigDecimal("700.00"), updated.getBalance());
     }
@@ -86,25 +89,25 @@ class AccountServiceTest {
     void shouldThrowExceptionWhenDebitingNonExistentAccount() {
         assertThrows(
             AccountNotFoundException.class,
-            () -> accountService.debit("non-existent", new BigDecimal("100.00"))
+            () -> accountService.debit(OPERATOR, "non-existent", new BigDecimal("100.00"))
         );
     }
 
     @Test
     @DisplayName("Deve lançar exceção ao debitar com saldo insuficiente")
     void shouldThrowExceptionWhenDebitingWithInsufficientBalance() {
-        Account account = accountService.createAccount(new BigDecimal("100.00"));
+        Account account = accountService.createAccount(OPERATOR, new BigDecimal("100.00"));
         
         assertThrows(
             InsufficientFundsException.class,
-            () -> accountService.debit(account.getId(), new BigDecimal("200.00"))
+            () -> accountService.debit(OPERATOR, account.getId(), new BigDecimal("200.00"))
         );
     }
 
     @Test
     @DisplayName("Deve criar conta com titular")
     void shouldCreateAccountWithHolder() {
-        Account account = accountService.createAccount(new BigDecimal("100.00"), "cliente-1");
+        Account account = accountService.createAccount(OPERATOR, new BigDecimal("100.00"), "cliente-1");
 
         assertEquals("cliente-1", account.getHolder());
         assertTrue(account.heldBy("cliente-1"));
@@ -114,9 +117,9 @@ class AccountServiceTest {
     @Test
     @DisplayName("Deve dar titular a uma conta sem titular")
     void shouldAssignHolderToAccountWithoutOne() {
-        Account account = accountService.createAccount(new BigDecimal("100.00"));
+        Account account = accountService.createAccount(OPERATOR, new BigDecimal("100.00"));
 
-        Account assigned = accountService.assignHolder(account.getId(), "cliente-1");
+        Account assigned = accountService.assignHolder(OPERATOR, account.getId(), "cliente-1");
 
         assertEquals("cliente-1", assigned.getHolder());
         assertTrue(accountService.accountsOf("cliente-1").stream().anyMatch(it -> it.getId().equals(account.getId())));
@@ -125,11 +128,11 @@ class AccountServiceTest {
     @Test
     @DisplayName("Não deve trocar o titular de uma conta que já tem")
     void shouldRefuseToReplaceHolder() {
-        Account account = accountService.createAccount(new BigDecimal("100.00"), "cliente-1");
+        Account account = accountService.createAccount(OPERATOR, new BigDecimal("100.00"), "cliente-1");
 
         assertThrows(
             AccountAlreadyHasHolderException.class,
-            () -> accountService.assignHolder(account.getId(), "cliente-2")
+            () -> accountService.assignHolder(OPERATOR, account.getId(), "cliente-2")
         );
         assertEquals("cliente-1", accountService.getAccount(account.getId()).getHolder());
     }
@@ -139,16 +142,16 @@ class AccountServiceTest {
     void shouldThrowExceptionWhenAssigningHolderToNonExistentAccount() {
         assertThrows(
             AccountNotFoundException.class,
-            () -> accountService.assignHolder("non-existent", "cliente-1")
+            () -> accountService.assignHolder(OPERATOR, "non-existent", "cliente-1")
         );
     }
 
     @Test
     @DisplayName("O titular só acessa a própria conta; o back office acessa qualquer uma")
     void shouldEnforceAccountAccess() {
-        Account mine = accountService.createAccount(new BigDecimal("100.00"), "cliente-1");
-        Account other = accountService.createAccount(new BigDecimal("100.00"), "cliente-2");
-        Actor holder = new Actor("cliente-1", false);
+        Account mine = accountService.createAccount(OPERATOR, new BigDecimal("100.00"), "cliente-1");
+        Account other = accountService.createAccount(OPERATOR, new BigDecimal("100.00"), "cliente-2");
+        Actor holder = new Actor("cliente-1", Set.of(Actor.HOLDER));
 
         assertEquals(mine.getId(), accountService.getAccountFor(holder, mine.getId()).getId());
         assertTrue(accountService.canAccess(holder, mine.getId()));
@@ -158,16 +161,16 @@ class AccountServiceTest {
             () -> accountService.getAccountFor(holder, other.getId())
         );
 
-        Actor backOffice = new Actor("operador", true);
+        Actor backOffice = new Actor("operador", Set.of(Actor.OPERATOR));
         assertEquals(other.getId(), accountService.getAccountFor(backOffice, other.getId()).getId());
     }
 
     @Test
     @DisplayName("Lista as contas do titular em ordem estável")
     void shouldListAccountsOfHolder() {
-        Account second = accountService.createAccount(new BigDecimal("1.00"), "cliente-1");
-        Account first = accountService.createAccount(new BigDecimal("2.00"), "cliente-1");
-        accountService.createAccount(new BigDecimal("3.00"), "cliente-2");
+        Account second = accountService.createAccount(OPERATOR, new BigDecimal("1.00"), "cliente-1");
+        Account first = accountService.createAccount(OPERATOR, new BigDecimal("2.00"), "cliente-1");
+        accountService.createAccount(OPERATOR, new BigDecimal("3.00"), "cliente-2");
 
         List<String> ids = accountService.accountsOf("cliente-1").stream().map(Account::getId).toList();
 

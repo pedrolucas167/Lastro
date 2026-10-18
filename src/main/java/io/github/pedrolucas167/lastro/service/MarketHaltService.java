@@ -1,5 +1,6 @@
 package io.github.pedrolucas167.lastro.service;
 
+import io.github.pedrolucas167.lastro.domain.Actor;
 import io.github.pedrolucas167.lastro.journal.DomainEvent;
 import io.github.pedrolucas167.lastro.journal.EventStore;
 import io.github.pedrolucas167.lastro.journal.JournalRebuildable;
@@ -35,15 +36,15 @@ public class MarketHaltService implements JournalRebuildable {
         this.eventStore = eventStore;
     }
 
-    public void halt(String symbol, String reason) {
+    public void halt(Actor actor, String symbol, String reason) {
         String recordedReason = reason == null || reason.isBlank() ? NO_REASON : reason;
-        eventStore.append(new SymbolHalted(symbol, recordedReason, Instant.now()));
+        eventStore.append(new SymbolHalted(symbol, recordedReason, actor, Instant.now()));
         haltReasons.put(symbol, recordedReason);
         logger.info("Trading halted for {}: {}", symbol, recordedReason);
     }
 
-    public void resume(String symbol) {
-        eventStore.append(new SymbolResumed(symbol, Instant.now()));
+    public void resume(Actor actor, String symbol) {
+        eventStore.append(new SymbolResumed(symbol, actor, Instant.now()));
         haltReasons.remove(symbol);
         logger.info("Trading resumed for {}", symbol);
     }

@@ -1,5 +1,6 @@
 package io.github.pedrolucas167.lastro.concurrency;
 
+import io.github.pedrolucas167.lastro.domain.Actor;
 import io.github.pedrolucas167.lastro.domain.MatchingEngine;
 import io.github.pedrolucas167.lastro.domain.Order;
 import io.github.pedrolucas167.lastro.domain.OrderSide;
@@ -12,6 +13,7 @@ import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 import java.math.BigDecimal;
+import java.util.Set;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -28,6 +30,8 @@ import static org.junit.jupiter.api.Assertions.*;
 // exige um instrumento proprio (JMH), nao o relogio deste teste.
 @Tag("slow")
 class ScaleTest {
+    private static final Actor BACK_OFFICE = new Actor("operador", Set.of(Actor.OPERATOR));
+
     private MatchingEngine matchingEngine;
     private OrderService orderService;
 
@@ -104,13 +108,13 @@ class ScaleTest {
                 try {
                     for (int j = 0; j < pairsPerThread; j++) {
                         String symbol = "PETR4";
-                        Order buy = orderService.createOrder(
+                        Order buy = orderService.createOrder(BACK_OFFICE, 
                             symbol, OrderSide.BUY, OrderType.LIMIT,
                             new BigDecimal("30.00"), 10, "acc-" + threadId
                         );
                         matchingEngine.submitOrder(buy);
 
-                        Order sell = orderService.createOrder(
+                        Order sell = orderService.createOrder(BACK_OFFICE, 
                             symbol, OrderSide.SELL, OrderType.LIMIT,
                             new BigDecimal("30.00"), 10, "acc-" + threadId
                         );
@@ -146,13 +150,13 @@ class ScaleTest {
                 try {
                     for (int j = 0; j < pairsPerAccount; j++) {
                         String symbol = "VALE3";
-                        Order buy = orderService.createOrder(
+                        Order buy = orderService.createOrder(BACK_OFFICE, 
                             symbol, OrderSide.BUY, OrderType.LIMIT,
                             new BigDecimal("50.00"), 10, "acc-" + accountId
                         );
                         matchingEngine.submitOrder(buy);
 
-                        Order sell = orderService.createOrder(
+                        Order sell = orderService.createOrder(BACK_OFFICE, 
                             symbol, OrderSide.SELL, OrderType.LIMIT,
                             new BigDecimal("50.00"), 10, "acc-" + accountId
                         );

@@ -1,6 +1,7 @@
 package io.github.pedrolucas167.lastro.service;
 
 import io.github.pedrolucas167.lastro.config.PriceBandProperties;
+import io.github.pedrolucas167.lastro.domain.Actor;
 import io.github.pedrolucas167.lastro.domain.MatchingEngine;
 import io.github.pedrolucas167.lastro.domain.Order;
 import io.github.pedrolucas167.lastro.domain.OrderBook;
@@ -15,19 +16,21 @@ import org.junit.jupiter.api.Test;
 
 import java.math.BigDecimal;
 import java.util.List;
+import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.*;
 
 class TradingJournalReplayTest {
+    private static final Actor BACK_OFFICE = new Actor("operador", Set.of(Actor.OPERATOR));
 
     @Test
     void rebuildsBookPositionsAndTradesFromJournal() {
         EventStore eventStore = new InMemoryEventStore();
         TradingService writer = newTradingService(eventStore);
 
-        writer.submitOrder("PETR4", OrderSide.SELL, OrderType.LIMIT,
+        writer.submitOrder(BACK_OFFICE, "PETR4", OrderSide.SELL, OrderType.LIMIT,
             new BigDecimal("38.50"), 100, "seller", TimeInForce.GTC);
-        writer.submitOrder("PETR4", OrderSide.BUY, OrderType.LIMIT,
+        writer.submitOrder(BACK_OFFICE, "PETR4", OrderSide.BUY, OrderType.LIMIT,
             new BigDecimal("38.50"), 40, "buyer", TimeInForce.GTC);
 
         List<Trade> before = writer.getTrades();
@@ -57,13 +60,13 @@ class TradingJournalReplayTest {
         EventStore eventStore = new InMemoryEventStore();
         TradingService writer = newTradingService(eventStore);
 
-        Order kept = writer.submitOrder("VALE3", OrderSide.BUY, OrderType.LIMIT,
+        Order kept = writer.submitOrder(BACK_OFFICE, "VALE3", OrderSide.BUY, OrderType.LIMIT,
             new BigDecimal("60.00"), 100, "a1", TimeInForce.GTC).order();
-        Order cancelled = writer.submitOrder("VALE3", OrderSide.BUY, OrderType.LIMIT,
+        Order cancelled = writer.submitOrder(BACK_OFFICE, "VALE3", OrderSide.BUY, OrderType.LIMIT,
             new BigDecimal("60.00"), 50, "a2", TimeInForce.GTC).order();
 
-        assertTrue(writer.cancelOrder(cancelled.getId(), "VALE3"));
-        assertTrue(writer.replaceOrder(kept.getId(), "VALE3", new BigDecimal("61.00"), null).isPresent());
+        assertTrue(writer.cancelOrder(BACK_OFFICE, cancelled.getId(), "VALE3"));
+        assertTrue(writer.replaceOrder(BACK_OFFICE, kept.getId(), "VALE3", new BigDecimal("61.00"), null).isPresent());
 
         TradingService replayed = newTradingService(eventStore);
         replayed.rebuild(eventStore.readAll());
@@ -79,13 +82,13 @@ class TradingJournalReplayTest {
         EventStore eventStore = new InMemoryEventStore();
         TradingService writer = newTradingService(eventStore);
 
-        Order first = writer.submitOrder("ITUB4", OrderSide.BUY, OrderType.LIMIT,
+        Order first = writer.submitOrder(BACK_OFFICE, "ITUB4", OrderSide.BUY, OrderType.LIMIT,
             new BigDecimal("30.00"), 100, "a1", TimeInForce.GTC).order();
-        Order second = writer.submitOrder("ITUB4", OrderSide.BUY, OrderType.LIMIT,
+        Order second = writer.submitOrder(BACK_OFFICE, "ITUB4", OrderSide.BUY, OrderType.LIMIT,
             new BigDecimal("30.00"), 100, "a2", TimeInForce.GTC).order();
 
         // Amend no mesmo preco: a ordem volta ao fim da fila (perde prioridade).
-        assertTrue(writer.replaceOrder(first.getId(), "ITUB4", new BigDecimal("30.00"), null).isPresent());
+        assertTrue(writer.replaceOrder(BACK_OFFICE, first.getId(), "ITUB4", new BigDecimal("30.00"), null).isPresent());
 
         TradingService replayed = newTradingService(eventStore);
         replayed.rebuild(eventStore.readAll());

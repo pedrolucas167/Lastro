@@ -29,7 +29,7 @@ public class AccountController {
     public ResponseEntity<AccountResponse> createAccount(Authentication authentication,
                                                         @Valid @RequestBody CreateAccountRequest request) {
         Actor actor = Roles.actor(authentication);
-        Account account = accountService.createAccount(request.getInitialBalance(), holderFor(actor, request));
+        Account account = accountService.createAccount(actor, request.getInitialBalance(), holderFor(actor, request));
         return ResponseEntity.ok(AccountResponse.of(account));
     }
 
@@ -52,23 +52,26 @@ public class AccountController {
 
     /** Da titular a uma conta que ainda nao tem. Ato de operador. */
     @PostMapping("/{accountId}/holder")
-    public ResponseEntity<AccountResponse> assignHolder(@PathVariable String accountId,
+    public ResponseEntity<AccountResponse> assignHolder(Authentication authentication,
+                                                       @PathVariable String accountId,
                                                        @Valid @RequestBody AssignHolderRequest request) {
-        Account account = accountService.assignHolder(accountId, request.getHolder());
+        Account account = accountService.assignHolder(Roles.actor(authentication), accountId, request.getHolder());
         return ResponseEntity.ok(AccountResponse.of(account));
     }
 
     @PostMapping("/{accountId}/credit")
-    public ResponseEntity<AccountResponse> credit(@PathVariable String accountId,
+    public ResponseEntity<AccountResponse> credit(Authentication authentication,
+                                                   @PathVariable String accountId,
                                                    @Valid @RequestBody AmountRequest request) {
-        Account account = accountService.credit(accountId, request.getAmount());
+        Account account = accountService.credit(Roles.actor(authentication), accountId, request.getAmount());
         return ResponseEntity.ok(AccountResponse.of(account));
     }
 
     @PostMapping("/{accountId}/debit")
-    public ResponseEntity<AccountResponse> debit(@PathVariable String accountId,
+    public ResponseEntity<AccountResponse> debit(Authentication authentication,
+                                                  @PathVariable String accountId,
                                                   @Valid @RequestBody AmountRequest request) {
-        Account account = accountService.debit(accountId, request.getAmount());
+        Account account = accountService.debit(Roles.actor(authentication), accountId, request.getAmount());
         return ResponseEntity.ok(AccountResponse.of(account));
     }
 
