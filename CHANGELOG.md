@@ -8,6 +8,10 @@ O formato segue [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/) e o 
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-10-18
+
+Terceira versão pública: vínculo entre conta e titular — o titular é o `sub` do Keycloak, o papel `lastro-holder` só enxerga e só movimenta as contas que tem, e a titularidade é um fato do journal. Inclui também a recusa de subida com credencial de desenvolvimento contra emissor não-local.
+
 ### Adicionado
 
 - A aplicação recusa subir quando o segredo do cliente M2M de desenvolvimento (público no repositório) é usado com um emissor que não seja localhost — o realm de demonstração viraria uma porta aberta. `lastro.security.reject-dev-credentials=false` troca o erro por um aviso.
@@ -17,6 +21,7 @@ O formato segue [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/) e o 
 
 ### Alterado
 
+- A versão do projeto no `pom.xml` acompanha a versão publicada (estava em `0.1.0` desde a primeira versão, enquanto as tags já iam em `v0.2.0`). Ela é a versão que a aplicação expõe — `GET /v3/api-docs` e `/actuator/info` — então agora ela e a tag coincidem.
 - A resposta de conta (`AccountResponse`) passa a trazer o `holder`, e `GET /api/accounts/{id}` e `GET /api/transactions/{id}` passam a ser acessíveis a quem tem a conta — o operador continua vendo qualquer uma; quem não é o titular recebe `403`.
 - Autenticado sem o papel exigido continua `403`; a tentativa de operar conta de terceiro também, mas o corpo da resposta diz que a conta é de outro titular.
 
