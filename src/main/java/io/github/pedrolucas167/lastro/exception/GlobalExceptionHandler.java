@@ -103,6 +103,20 @@ public class GlobalExceptionHandler {
         return ResponseEntity.status(HttpStatus.CONFLICT).body(error);
     }
 
+    @ExceptionHandler(OrderIdempotencyKeyReusedException.class)
+    public ResponseEntity<ErrorResponse> handleOrderIdempotencyKeyReused(
+            OrderIdempotencyKeyReusedException ex, WebRequest request) {
+        logger.warn("Idempotency key reused: {}", ex.getMessage());
+        ErrorResponse error = new ErrorResponse(
+            HttpStatus.CONFLICT.value(),
+            "Conflict",
+            ex.getMessage(),
+            Instant.now(),
+            request.getDescription(false).replace("uri=", "")
+        );
+        return ResponseEntity.status(HttpStatus.CONFLICT).body(error);
+    }
+
     @ExceptionHandler(IllegalArgumentException.class)
     public ResponseEntity<ErrorResponse> handleIllegalArgument(
             IllegalArgumentException ex, WebRequest request) {

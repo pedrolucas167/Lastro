@@ -1,6 +1,7 @@
 package io.github.pedrolucas167.lastro.service;
 
 import io.github.pedrolucas167.lastro.domain.*;
+import io.github.pedrolucas167.lastro.exception.OrderIdempotencyKeyReusedException;
 import io.github.pedrolucas167.lastro.journal.DomainEvent;
 import io.github.pedrolucas167.lastro.journal.EventStore;
 import io.github.pedrolucas167.lastro.journal.JournalRebuildable;
@@ -45,19 +46,62 @@ public class TradingService implements JournalRebuildable {
     public OrderExecutionResult submitOrder(Actor actor, String symbol, OrderSide side, OrderType type,
                                    BigDecimal price, int quantity, String accountId,
                                    TimeInForce timeInForce) {
+        return submitOrder(actor, symbol, side, type, price, quantity, accountId, timeInForce, null);
+    }
+
+    /**
+     * Envia a ordem. Com chave de idempotencia, um retry do cliente devolve a ordem que ja foi
+     * aceita, sem ordem nova e sem evento novo no journal.
+     */
+    public OrderExecutionResult submitOrder(Actor actor, String symbol, OrderSide side, OrderType type,
+                                   BigDecimal price, int quantity, String accountId,
+                                   TimeInForce timeInForce, String idempotencyKey) {
+        Order retried = orderService.getOrderWithIdempotencyKey(idempotencyKey);
+        if (retried != null) {
+            // Retry da mesma chave: a ordem ja foi aceita e ja foi ao engine. Revalidar aqui
+            // poderia recusa-la por uma regra que mudou depois -- e o retry nao pode mudar a
+            // resposta que o cliente ja tinha recebido.
+            return retryOf(retried, symbol, side, type, timeInForce, accountId);
+        }
+
         regulatoryValidationService.validateOrder(symbol, side, type, price, quantity, accountId);
-        
+
         // O OrderService registra o OrderSubmitted no journal ao criar a ordem.
-        Order order = orderService.createOrder(actor, symbol, side, type, price, quantity, accountId, timeInForce);
-        
+        OrderService.Creation creation = orderService.createOrderWithIdempotencyKey(actor, symbol, side,
+            type, price, quantity, accountId, timeInForce, idempotencyKey);
+
+        if (!creation.created()) {
+            // Corrida: outra chamada com a mesma chave criou a ordem entre a consulta e aqui.
+            return retryOf(creation.order(), symbol, side, type, timeInForce, accountId);
+        }
+
+        Order order = creation.order();
         List<Trade> trades = matchingEngine.submitOrder(order);
-        
+
         if (!trades.isEmpty()) {
             recordTrades(actor, trades);
             logger.info("Order {} generated {} trades", order.getId(), trades.size());
         }
-        
+
         return new OrderExecutionResult(order, trades);
+    }
+
+    /**
+     * A ordem que a chave de idempotencia ja tinha. Chave repetida para outro comando e erro do
+     * cliente, nao retry -- mas preco e quantidade ficam de fora da comparacao porque o amend os
+     * move: quem alterou a ordem e reenvia o pedido original continua sendo um retry.
+     */
+    private OrderExecutionResult retryOf(Order known, String symbol, OrderSide side, OrderType type,
+                                        TimeInForce timeInForce, String accountId) {
+        boolean sameCommand = known.getSymbol().equals(symbol)
+            && known.getSide() == side
+            && known.getType() == type
+            && known.getTimeInForce() == timeInForce
+            && known.getAccountId().equals(accountId);
+        if (!sameCommand) {
+            throw new OrderIdempotencyKeyReusedException(known.getId());
+        }
+        return new OrderExecutionResult(known, List.of());
     }
 
     public Optional<OrderExecutionResult> replaceOrder(Actor actor, String orderId, String symbol,
@@ -146,7 +190,7 @@ public class TradingService implements JournalRebuildable {
             switch (tradingEvent) {
                 case OrderSubmitted e -> matchingEngine.submitOrder(orderService.register(
                     e.orderId(), e.symbol(), e.side(), e.orderType(), e.price(), e.quantity(),
-                    e.accountId(), e.timeInForce()));
+                    e.accountId(), e.timeInForce(), e.idempotencyKey()));
                 case OrderCancelled e -> matchingEngine.cancelOrder(e.orderId(), e.symbol());
                 case OrderReplaced e -> matchingEngine.replaceOrder(e.orderId(), e.symbol(),
                     e.price(), e.quantity());

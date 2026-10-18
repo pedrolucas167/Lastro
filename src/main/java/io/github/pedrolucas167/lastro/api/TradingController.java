@@ -23,8 +23,14 @@ public class TradingController {
         this.tradingService = tradingService;
     }
 
+    /**
+     * `Idempotency-Key` e a chave do cliente para reenvio: repetir a chamada com a mesma chave
+     * devolve a ordem que ja foi aceita, sem criar outra.
+     */
     @PostMapping("/orders")
     public ResponseEntity<OrderResponse> createOrder(Authentication authentication,
+                                                     @RequestHeader(value = "Idempotency-Key", required = false)
+                                                     String idempotencyKey,
                                                      @Valid @RequestBody CreateOrderRequest request) {
         OrderSide side = OrderSide.valueOf(request.getSide().toUpperCase());
         OrderType type = OrderType.valueOf(request.getType().toUpperCase());
@@ -38,7 +44,8 @@ public class TradingController {
             request.getPrice(),
             request.getQuantity(),
             request.getAccountId(),
-            timeInForce
+            timeInForce,
+            idempotencyKey
         );
 
         Order order = result.order();
