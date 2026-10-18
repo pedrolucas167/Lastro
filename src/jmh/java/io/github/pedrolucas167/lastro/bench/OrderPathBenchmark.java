@@ -64,7 +64,7 @@ public class OrderPathBenchmark {
     @Benchmark
     public OrderSubmitted journalAppend(PathState state) {
         OrderSubmitted event = new OrderSubmitted("o" + state.sequence++, "PETR4", OrderSide.BUY,
-            OrderType.LIMIT, PRICE, 10, "acc", TimeInForce.GTC, BENCH_ACTOR, Instant.now());
+            OrderType.LIMIT, PRICE, 10, "acc", TimeInForce.GTC, null, BENCH_ACTOR, Instant.now());
         state.eventStore.append(event);
         return event;
     }

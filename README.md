@@ -42,7 +42,7 @@ O Lastro é uma plataforma de trading de mercado de capitais estruturada como um
 - **Metrics Collector**: Coleta métricas de sistema durante os testes
 - **Order Book**: Book de ofertas com price-time priority
 - **Matching Engine**: Engine de matching de ordens buy/sell
-- **Idempotency Service**: Garante idempotência em transferências entre contas (janela de 24h)
+- **Idempotency Service**: Garante idempotência em transferências entre contas (janela de 24h) e em ordens (chave do cliente registrada no journal)
 - **Event Journal**: Persistência append-only de eventos de domínio, com replay no startup
 - **Actuator**: Health checks e métricas de produção (Prometheus)
 - **OpenAPI**: Documentação automática da API em Swagger UI
@@ -242,6 +242,7 @@ Todas as rotas abaixo exigem `Authorization: Bearer <token>` com o papel adequad
 ### Trading
 
 - `POST /api/trading/orders` - Criar ordem (body: `{"symbol": "PETR4", "side": "BUY", "type": "LIMIT", "price": 30.50, "quantity": 100, "accountId": "acc-1", "timeInForce": "GTC"}`; `timeInForce` opcional: `GTC` (padrão), `IOC`, `FOK`)
+  - Cabeçalho opcional `Idempotency-Key`: reenviar a mesma ordem com a mesma chave devolve a ordem que já foi aceita, sem criar outra nem gerar outro trade. A chave fica no journal e volta no replay, então o reenvio continua seguro depois de um reinício; a mesma chave para outra ordem responde `409`.
 - `POST /api/trading/orders/{orderId}/replace?symbol=PETR4` - Substituir preço/quantidade de uma ordem em repouso (body: `{"price": 10.50, "quantity": 200}`; campos opcionais)
 - `POST /api/trading/orders/{orderId}/cancel` - Cancelar ordem
 - `GET /api/trading/orderbook/{symbol}` - Obter book de ofertas

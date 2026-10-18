@@ -10,6 +10,7 @@ O formato segue [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/) e o 
 
 ### Adicionado
 
+- `POST /api/trading/orders` aceita o cabeçalho `Idempotency-Key`: reenviar a mesma ordem com a mesma chave devolve a ordem já aceita, sem ordem nova e sem trade duplicado — antes, o reenvio de um cliente que perdeu a resposta criava uma segunda ordem de verdade. A chave entra no evento `OrderSubmitted` e o índice é remontado no replay, então o reenvio segue seguro depois de um reinício (diferente da transferência, cuja janela em memória morre no restart); a mesma chave para outra ordem responde `409`, e reenviar sem chave continua criando uma ordem nova a cada chamada.
 - Cada evento do journal passa a gravar **quem o causou** — o `sub` do token e os papéis que a identidade carregava naquele momento — resolvido na borda e passado explícito ao serviço. Antes o journal dizia o que aconteceu, não quem fez; era o gap de auditoria declarado no README.
 
 ### Alterado
