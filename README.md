@@ -175,7 +175,7 @@ curl -s -X POST "http://localhost:8090/realms/lastro/protocol/openid-connect/tok
   -d "client_secret=lastro-service-secret"
 ```
 
-Sem token a API responde `401`; com um token válido sem o papel exigido, `403`. As credenciais acima são de desenvolvimento — em produção, use um Keycloak próprio e outro segredo de cliente.
+Sem token a API responde `401`; com um token válido sem o papel exigido, `403`. As credenciais acima são de desenvolvimento — em produção, use um Keycloak próprio e outro segredo de cliente. E como o segredo do cliente M2M está no repositório, a aplicação **recusa subir** se ele for usado com um emissor que não seja localhost (`lastro.security.reject-dev-credentials=false` troca o erro por um aviso).
 
 Para apontar para outro Keycloak, defina `spring.security.oauth2.resourceserver.jwt.issuer-uri` e `spring.security.oauth2.resourceserver.jwt.jwk-set-uri` (ou as variáveis de ambiente equivalentes). O `issuer-uri` é só validado, o JWKS é buscado sob demanda — a aplicação sobe mesmo com o Keycloak fora do ar.
 

@@ -8,6 +8,10 @@ O formato segue [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/) e o 
 
 ## [Unreleased]
 
+### Adicionado
+
+- A aplicação recusa subir quando o segredo do cliente M2M de desenvolvimento (público no repositório) é usado com um emissor que não seja localhost — o realm de demonstração viraria uma porta aberta. `lastro.security.reject-dev-credentials=false` troca o erro por um aviso.
+
 ## [0.2.0] - 2026-10-18
 
 Segunda versão pública: autenticação, autorização por papel e o halt/circuit breaker durável. **Quebra de compatibilidade** para quem chamava a API da v0.1.0 sem token (ver Alterado).
