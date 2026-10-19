@@ -10,7 +10,7 @@
     </parent>
     <groupId>io.github.pedrolucas167</groupId>
     <artifactId>lastro</artifactId>
-    <version>0.3.0</version>
+    <version>0.4.0</version>
     <name>Lastro</name>
     <description>Plataforma de trading de mercado de capitais: order book com price-time priority, matching engine, journal append-only com replay e controles regulatorios</description>
     <url>https://github.com/pedrolucas167/Lastro</url>
