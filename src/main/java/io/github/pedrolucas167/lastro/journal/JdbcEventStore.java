@@ -21,6 +21,7 @@ public class JdbcEventStore implements EventStore {
         Map.entry("OrderCancelled", OrderCancelled.class),
         Map.entry("OrderReplaced", OrderReplaced.class),
         Map.entry("TradeExecuted", TradeExecuted.class),
+        Map.entry("CustodyTransferred", CustodyTransferred.class),
         Map.entry("SymbolHalted", SymbolHalted.class),
         Map.entry("SymbolResumed", SymbolResumed.class)
     );

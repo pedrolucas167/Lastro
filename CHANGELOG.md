@@ -4,9 +4,30 @@ Todas as mudanças relevantes deste projeto são documentadas aqui.
 
 O formato segue [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/) e o projeto adota [Versionamento Semântico](https://semver.org/lang/pt-BR/).
 
-> ⚠️ **Experimental.** O núcleo de matching é correto sob concorrência e durável via journal + replay. A API exige autenticação (JWT do Keycloak), autoriza por papel na rota e por titular na conta, e cada evento do journal grava o ator (o `sub` e os papéis daquele momento), mas não há entidade de cliente (KYC), limites por titular nem conectividade de mercado (feed/FIX) e clearing. Não use em produção.
+> ⚠️ **Experimental.** O núcleo de matching é correto sob concorrência e durável via journal + replay. A API exige autenticação (JWT do Keycloak), autoriza por papel na rota e por titular na conta, e cada evento do journal grava o ator (o `sub` e os papéis daquele momento), mas não há entidade de cliente (KYC), limites por titular nem conectividade de mercado (feed/FIX), e a liquidação é D+0 no próprio livro, sem câmara ou netting. Não use em produção.
 
 ## [Unreleased]
+
+Pré-trade, liquidação e custódia: nenhuma ordem chega ao engine sem lastro e o trade move o caixa no ato.
+
+### Adicionado
+
+- **Lastro de compra.** A ordem bloqueia `preço-limite × quantidade restante` do disponível da conta e é recusada com `403` quando não cobre — antes a ordem entrava no book sem dinheiro por trás, e o comprador executava sem saldo (a conta ficava negativa ou o débito falhava depois do trade). O disponível é o saldo menos o que está prometido a ordens em aberto; `AccountResponse` passa a expor `available`, e crédito/débito/transferência só alcançam o disponível.
+- **Lastro de venda.** A ordem bloqueia as ações que ela ainda pode executar e é recusada com `403` quando a posição não cobre — antes a venda a descoberto criava posição negativa sem limite nenhum.
+- **Liquidação no trade (D+0).** O comprador paga `preço × quantidade` e o vendedor recebe no instante do trade. Não há evento de caixa próprio: o `TradeExecuted` carrega tudo o que a liquidação precisa, então o replay chega ao mesmo estado sem coreografia extra.
+- **Custódia**: `POST /api/trading/positions/deposit` (a ação entra no sistema, vinda de fora, no custo médio informado) e `POST /api/trading/positions/transfer` (a ação passa de uma conta para outra, com o custo médio acompanhando). É por onde a ação existe — sem isso, uma conta nova não teria o que vender. O fato é `CustodyTransferred`, replicado no replay, e a transferência não move ação prometida a uma venda em aberto.
+
+### Corrigido
+
+- Ordem a mercado podia repousar no book e derrubar a execução seguinte com `500`: a ordem ficava no book sem preço, e o motor tentava comparar preço com `null`. Agora só ordem limitada GTC descansa — o que não executa de uma ordem a mercado é cancelado.
+- As validações de saldo e posição do serviço regulatório (`validateSufficientBalance`/`validateSufficientPosition`) eram código morto: nunca eram chamadas. Foram removidas e substituídas pelo pré-trade de verdade.
+
+### Alterado
+
+- **Compra a mercado é limitada pelo teto da banda de preço**: o teto é o valor bloqueado (a ordem não tem preço próprio) e símbolo sem banda de referência recusa compra a mercado com `403`, porque não há teto que garanta o caixa.
+- O amend bloqueia apenas o que ele passa a pedir a mais e devolve o que a ordem deixa de pedir; amend recusado pelo engine devolve o bloqueio inteiro.
+- O bloqueio de lastro **não** é evento do journal: é consequência das ordens em aberto, como a posição, e o replay o reconstrói somando as ordens de compra e de venda que continuam abertas — o que exige reconstruir as contas antes do engine (daí a ordem explícita no replay).
+- Journal gravado antes desta versão continua abrindo: o replay reconstrói o bloqueio a partir das ordens em aberto, mesmo as que foram aceitas sem lastro. A conta que ficou com bloqueio maior que o saldo simplesmente não aceita ordem nova até ser creditada.
 
 ## [0.4.0] - 2026-10-19
 

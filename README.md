@@ -5,7 +5,7 @@
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](./LICENSE)
 [![Java](https://img.shields.io/badge/Java-25-orange.svg)](https://openjdk.org/projects/jdk/25/)
 
-> **Status: experimental (v0.x).** O núcleo de matching é correto sob concorrência e durável via journal + replay. A API exige autenticação (JWT do Keycloak), autoriza por papel na rota e por titular na conta — o titular só alcança as contas que tem, enquanto operador e M2M são o balcão e movimentam qualquer conta — e cada evento do journal grava quem o causou. Isto **não é production-ready**: não há entidade de cliente (KYC), limites por titular nem conectividade de mercado (feed/FIX) e clearing/settlement. Use por sua conta e risco.
+> **Status: experimental (v0.x).** O núcleo de matching é correto sob concorrência e durável via journal + replay. A API exige autenticação (JWT do Keycloak), autoriza por papel na rota e por titular na conta — o titular só alcança as contas que tem, enquanto operador e M2M são o balcão e movimentam qualquer conta — e cada evento do journal grava quem o causou. Isto **não é production-ready**: não há entidade de cliente (KYC), limites por titular nem conectividade de mercado (feed/FIX); a liquidação é D+0 e no próprio livro, sem câmara, netting ou D+n. Use por sua conta e risco.
 
 Plataforma de trading de mercado de capitais para testar concorrência e escalabilidade em matching engines, construída com rigor de nível institucional.
 
@@ -75,14 +75,28 @@ deploy/keycloak/      # Realm de desenvolvimento (papéis, clientes e usuário d
 
 ### Funcionalidades
 
-- **Ordens**: Buy/Sell, Limit/Market, time-in-force GTC/IOC/FOK e cancel-replace (amend)
+- **Ordens**: Buy/Sell, Limit/Market, time-in-force GTC/IOC/FOK e cancel-replace (amend). Ordem a mercado é imediata — o que não executa é cancelado — e só ordem limitada GTC repousa no book
 - **Order Book**: Book de ofertas com price-time priority
 - **Matching Engine**: Matching de ordens com FIFO por preço
+- **Pré-trade**: a compra exige caixa disponível (saldo menos o que já está bloqueado por ordens em aberto) e a venda exige a ação na posição — não há posição descoberta
+- **Liquidação**: o trade move o caixa no ato (D+0) — o comprador paga e o vendedor recebe, sem evento de caixa próprio
+- **Custódia**: depósito e transferência de ações entre contas, com o custo médio acompanhando a ação; é por onde a ação entra no sistema
 - **Trades**: Execuções com preço e quantidade
 - **Posições**: Tracking de posições e PnL por conta/símbolo
 - **Regulação**: Validações de pré-negociação (janela de negociação, bandas de preço, limites de quantidade/preço/valor e formato do símbolo)
 - **Circuit breaker**: Halt/resume por símbolo, durável no journal, que pausa o trading sem cancelar o book
 - **Controle de acesso**: JWT do Keycloak e autorização por papel (M2M × operador) por rota
+
+### Lastro (pré-trade, liquidação e custódia)
+
+Nenhuma ordem chega ao engine sem lastro, e o lastro é o que a ordem **ainda pode executar**:
+
+- **Compra** bloqueia `preço-limite × quantidade restante` do disponível da conta — ordem a mercado bloqueia o teto da banda de preço. Sem caixa que cubra, a ordem é recusada com `403` **antes** de virar fato: não existe ordem sem dinheiro no book.
+- **Venda** bloqueia as ações que a ordem pode executar. Vender ação que a conta não tem é recusado com `403` — não há posição descoberta.
+- **Executou, pagou**: o trade liquida na hora (D+0). O comprador paga `preço × quantidade` e o vendedor recebe no mesmo instante; não há evento de caixa separado porque o `TradeExecuted` carrega tudo o que a liquidação precisa.
+- **Não executou, voltou**: cancelar (ou não repousar, no caso de ordem a mercado) devolve o lastro do que sobrou. O bloqueio **não** é evento do journal — é consequência das ordens em aberto, como a posição, e o replay o reconstrói somando as ordens ainda abertas.
+
+A ação entra no sistema pela custódia (`POST /api/trading/positions/deposit`): o operador registra a carteira que o cliente traz de fora, no custo médio informado. Dali em diante ela se move entre contas por transferência e por trade — sem isso, uma conta nova não teria o que vender.
 
 ### Concorrência
 
@@ -146,8 +160,9 @@ O realm de desenvolvimento (`lastro`, em `deploy/keycloak/lastro-realm.json`) tr
 | `GET /api/accounts/mine` (as contas do próprio token) | – | ✓ | ✓ |
 | `GET /api/transactions/{id}` | – | ✓ (qualquer) | ✓ (se tocar conta própria) |
 | `POST /api/accounts/{id}/holder` (definir titular) | – | ✓ | – |
-| `POST /api/accounts/{id}/credit`, `/debit` (movimenta saldo) | – | ✓ | – |
+| `POST /api/accounts/{id}/credit`, `/debit` (movimenta saldo; o débito só alcança o disponível) | – | ✓ | – |
 | `POST /api/trading/orders`, `/replace`, `/cancel` | – | ✓ | – |
+| `POST /api/trading/positions/deposit`, `/positions/transfer` (custódia) | – | ✓ | – |
 | `GET /api/trading/**` (book, trades, posições, PnL) | – | ✓ | – |
 | `POST /api/market/{symbol}/halt`, `/resume`, `GET /api/market/halted` | – | ✓ | – |
 | `/api/loadtest/**` (disparar e consultar carga) | – | ✓ | – |
@@ -244,6 +259,7 @@ Todas as rotas abaixo exigem `Authorization: Bearer <token>` com o papel adequad
 ### Trading
 
 - `POST /api/trading/orders` - Criar ordem (body: `{"symbol": "PETR4", "side": "BUY", "type": "LIMIT", "price": 30.50, "quantity": 100, "accountId": "acc-1", "timeInForce": "GTC"}`; `timeInForce` opcional: `GTC` (padrão), `IOC`, `FOK`)
+  - A ordem exige lastro: a compra precisa de caixa disponível na conta e a venda precisa da ação na posição. Sem lastro a resposta é `403` e **nada** entra no journal — ordem recusada não vira fato.
   - Cabeçalho opcional `Idempotency-Key`: reenviar a mesma ordem com a mesma chave devolve a ordem que já foi aceita, sem criar outra nem gerar outro trade. A chave fica no journal e volta no replay, então o reenvio continua seguro depois de um reinício; a mesma chave para outra ordem responde `409`.
 - `POST /api/trading/orders/{orderId}/replace?symbol=PETR4` - Substituir preço/quantidade de uma ordem em repouso (body: `{"price": 10.50, "quantity": 200}`; campos opcionais). Amend recusado pelo engine (ordem fora de repouso ou quantidade abaixo da já executada) responde `404` **sem** deixar `OrderReplaced` no journal.
 - `POST /api/trading/orders/{orderId}/cancel?symbol=PETR4` - Cancelar ordem em repouso: `200` quando cancela, e também `200` no reenvio de uma ordem já cancelada — o journal já tem o cancelamento, então não entra evento novo. Ordem desconhecida é `404` e ordem preenchida é `409`; nos dois casos, nada é gravado.
@@ -252,15 +268,17 @@ Todas as rotas abaixo exigem `Authorization: Bearer <token>` com o papel adequad
 - `GET /api/trading/trades?symbol=XXX` - Obter trades por símbolo
 - `GET /api/trading/positions/{accountId}/{symbol}` - Obter posição
 - `GET /api/trading/positions/{accountId}/{symbol}/pnl?currentPrice=XX` - Obter PnL
+- `POST /api/trading/positions/deposit` - Depositar ação numa conta, vinda de fora do sistema (body: `{"accountId": "acc-1", "symbol": "PETR4", "quantity": 100, "price": 30.50}`)
+- `POST /api/trading/positions/transfer` - Transferir ação entre contas (body: `{"fromAccountId": "acc-1", "toAccountId": "acc-2", "symbol": "PETR4", "quantity": 100}`; não move ação prometida a uma venda em aberto)
 
 ### Contas
 
 - `POST /api/accounts` - Criar conta (body: `{"initialBalance": 1000.00}`; o operador pode abrir em nome de alguém com `"holder": "<sub>"`)
 - `GET /api/accounts/mine` - Listar as contas do próprio token
-- `GET /api/accounts/{id}` - Buscar conta
+- `GET /api/accounts/{id}` - Buscar conta (a resposta traz `balance` e `available`, o saldo menos o bloqueado por ordens de compra em aberto)
 - `POST /api/accounts/{id}/holder` - Definir o titular de uma conta sem titular (body: `{"holder": "<sub>"}`, ato de operador)
 - `POST /api/accounts/{id}/credit` - Creditar valor (body: `{"amount": 100.00}`)
-- `POST /api/accounts/{id}/debit` - Debitar valor (body: `{"amount": 100.00}`)
+- `POST /api/accounts/{id}/debit` - Debitar valor (body: `{"amount": 100.00}`; só o disponível, sem tocar no que está prometido a uma ordem)
 
 ### Transações
 

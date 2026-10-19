@@ -13,6 +13,7 @@ import java.math.BigDecimal;
 import java.time.DayOfWeek;
 import java.time.LocalTime;
 import java.time.temporal.ChronoUnit;
+import java.util.Optional;
 
 @Service
 public class RegulatoryValidationService {
@@ -57,6 +58,11 @@ public class RegulatoryValidationService {
         
         logger.info("Regulatory validation passed for order {} {} {} @ {} for account {}", 
             side, type, quantity, price, accountId);
+    }
+
+    /** O formato do simbolo vale para qualquer comando sobre uma acao, nao so para ordem. */
+    public void validateSymbolFormat(String symbol) {
+        validateSymbol(symbol);
     }
 
     /**
@@ -125,23 +131,21 @@ public class RegulatoryValidationService {
     }
 
     private void validatePriceBand(String symbol, BigDecimal price, OrderType type) {
-        if (!priceBand.isEnabled() || type == OrderType.MARKET || price == null) {
+        if (type == OrderType.MARKET || price == null) {
             return;
         }
 
-        BigDecimal reference = priceBand.getReferencePrices().get(symbol);
-        if (reference == null) {
+        Optional<BigDecimal> lowerBound = priceBand.lowerBound(symbol);
+        Optional<BigDecimal> upperBound = priceBand.upperBound(symbol);
+        if (lowerBound.isEmpty() || upperBound.isEmpty()) {
+            // Simbolo sem referencia configurada nao tem banda.
             return;
         }
 
-        BigDecimal factor = priceBand.getPercent().movePointLeft(2);
-        BigDecimal lowerBound = reference.multiply(BigDecimal.ONE.subtract(factor));
-        BigDecimal upperBound = reference.multiply(BigDecimal.ONE.add(factor));
-
-        if (price.compareTo(lowerBound) < 0 || price.compareTo(upperBound) > 0) {
+        if (price.compareTo(lowerBound.get()) < 0 || price.compareTo(upperBound.get()) > 0) {
             throw new RegulatoryException(String.format(
                 "Price %s for %s is outside the allowed band [%s, %s]",
-                price, symbol, lowerBound, upperBound));
+                price, symbol, lowerBound.get(), upperBound.get()));
         }
     }
 
@@ -170,24 +174,6 @@ public class RegulatoryValidationService {
         if (!symbol.matches("^[A-Z0-9]+$")) {
             throw new RegulatoryException(
                 String.format("Symbol %s must contain only uppercase letters and numbers", symbol)
-            );
-        }
-    }
-
-    public void validateSufficientBalance(BigDecimal balance, BigDecimal requiredAmount) {
-        if (balance.compareTo(requiredAmount) < 0) {
-            throw new RegulatoryException(
-                String.format("Insufficient balance: required %s, available %s", 
-                    requiredAmount, balance)
-            );
-        }
-    }
-
-    public void validateSufficientPosition(int currentPosition, int requiredQuantity) {
-        if (currentPosition < requiredQuantity) {
-            throw new RegulatoryException(
-                String.format("Insufficient position: required %d, available %d", 
-                    requiredQuantity, currentPosition)
             );
         }
     }

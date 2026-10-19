@@ -119,7 +119,9 @@ public class MatchingEngine {
     }
 
     private boolean restsOnBook(Order order) {
-        return order.getTimeInForce() == TimeInForce.GTC;
+        // So ordem limitada GTC descansa: mercado nao tem preco para ocupar uma posicao no book
+        // (e o que sobra de uma ordem a mercado e cancelado, como no IOC).
+        return order.getType() == OrderType.LIMIT && order.getTimeInForce() == TimeInForce.GTC;
     }
 
     private boolean isFullyFillable(Order incoming, OrderBook orderBook) {

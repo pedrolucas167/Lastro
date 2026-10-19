@@ -14,6 +14,7 @@ import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
@@ -84,6 +85,11 @@ public class OrderService {
 
     public Order getOrder(String orderId) {
         return orders.get(orderId);
+    }
+
+    /** As ordens que ainda podem executar: o lastro reconstruido no replay sai delas. */
+    public List<Order> openOrders() {
+        return orders.values().stream().filter(Order::isOpen).toList();
     }
 
     public boolean cancelOrder(String orderId) {

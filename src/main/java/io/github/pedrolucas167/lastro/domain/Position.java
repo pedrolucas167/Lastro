@@ -12,6 +12,8 @@ public class Position {
     private final String symbol;
     private final AtomicInteger quantity;
     private final AtomicReference<BigDecimal> averagePrice;
+    /** Bloqueado para ordens de venda em aberto: a acao prometida nao pode ser prometida de novo. */
+    private int held;
     private final Lock lock = new ReentrantLock();
 
     public Position(String accountId, String symbol) {
@@ -35,6 +37,63 @@ public class Position {
 
     public BigDecimal getAveragePrice() {
         return averagePrice.get();
+    }
+
+    /** As acoes que ainda podem ser vendidas: a posicao menos o que esta em ordens de venda. */
+    public int getAvailable() {
+        lock.lock();
+        try {
+            return quantity.get() - held;
+        } finally {
+            lock.unlock();
+        }
+    }
+
+    /**
+     * Restaura o bloqueado no replay: a quantidade vem da soma das ordens de venda em aberto. E um
+     * valor reconstruido, nao um fato novo -- por isso nao ha checagem aqui.
+     */
+    public void rebuildHeld(int quantityHeld) {
+        lock.lock();
+        try {
+            held = Math.max(0, quantityHeld);
+        } finally {
+            lock.unlock();
+        }
+    }
+
+    /**
+     * Bloqueia acoes para uma ordem de venda. Devolve false quando a posicao livre nao cobre:
+     * e o que impede vender acao que nao existe (posicao negativa).
+     */
+    public boolean hold(int quantityToHold) {
+        if (quantityToHold < 0) {
+            throw new IllegalArgumentException("Quantity cannot be negative");
+        }
+        lock.lock();
+        try {
+            if (quantity.get() - held < quantityToHold) {
+                return false;
+            }
+            held += quantityToHold;
+            return true;
+        } finally {
+            lock.unlock();
+        }
+    }
+
+    /** Devolve as acoes bloqueadas que a ordem nao vai mais vender. */
+    public void release(int quantityToRelease) {
+        if (quantityToRelease < 0) {
+            throw new IllegalArgumentException("Quantity cannot be negative");
+        }
+        lock.lock();
+        try {
+            // Liberar mais do que esta bloqueado seria prometer o que nao existe: para no zero.
+            held = Math.max(0, held - quantityToRelease);
+        } finally {
+            lock.unlock();
+        }
     }
 
     public void addBuy(int qty, BigDecimal price) {

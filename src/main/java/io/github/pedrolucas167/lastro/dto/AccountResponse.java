@@ -11,10 +11,13 @@ import java.math.BigDecimal;
 public class AccountResponse {
     private String id;
     private BigDecimal balance;
+    /** O saldo menos o bloqueado para ordens de compra em aberto. */
+    private BigDecimal available;
     /** A identidade do Keycloak que responde pela conta; nulo enquanto ninguem a tiver. */
     private String holder;
 
     public static AccountResponse of(Account account) {
-        return new AccountResponse(account.getId(), account.getBalance(), account.getHolder());
+        return new AccountResponse(account.getId(), account.getBalance(), account.getAvailable(),
+            account.getHolder());
     }
 }

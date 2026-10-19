@@ -1,17 +1,13 @@
 package io.github.pedrolucas167.lastro.service;
 
-import io.github.pedrolucas167.lastro.config.PriceBandProperties;
-import io.github.pedrolucas167.lastro.domain.Actor;
-import io.github.pedrolucas167.lastro.domain.MatchingEngine;
 import io.github.pedrolucas167.lastro.domain.Order;
 import io.github.pedrolucas167.lastro.domain.OrderSide;
 import io.github.pedrolucas167.lastro.domain.OrderType;
 import io.github.pedrolucas167.lastro.domain.TimeInForce;
 import io.github.pedrolucas167.lastro.exception.OrderIdempotencyKeyReusedException;
-import io.github.pedrolucas167.lastro.journal.EventStore;
 import io.github.pedrolucas167.lastro.journal.InMemoryEventStore;
 import io.github.pedrolucas167.lastro.journal.OrderSubmitted;
-import io.github.pedrolucas167.lastro.metrics.MetricsCollector;
+import io.github.pedrolucas167.lastro.support.TradingFixture;
 import org.junit.jupiter.api.Test;
 
 import java.math.BigDecimal;
@@ -31,74 +27,74 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 
 /** O retry do cliente nao pode virar ordem nova: quem segura isso e a chave de idempotencia. */
 class OrderIdempotencyTest {
-    private static final Actor BACK_OFFICE = new Actor("operador", Set.of(Actor.OPERATOR));
 
     @Test
     void retryWithTheSameKeyGetsTheOrderThatWasAlreadyAccepted() {
-        EventStore eventStore = new InMemoryEventStore();
-        TradingService trading = newTradingService(eventStore);
+        TradingFixture fixture = newFixture();
+        String account = fixture.fundedAccount("100000.00");
 
-        Order first = submit(trading, "compra-1").order();
-        Order retried = submit(trading, "compra-1").order();
+        Order first = submit(fixture, account, "compra-1").order();
+        Order retried = submit(fixture, account, "compra-1").order();
 
         assertEquals(first.getId(), retried.getId());
-        assertEquals(1, journaledOrders(eventStore));
+        assertEquals(1, journaledOrders(fixture));
     }
 
     @Test
     void differentKeysCreateDifferentOrders() {
-        EventStore eventStore = new InMemoryEventStore();
-        TradingService trading = newTradingService(eventStore);
+        TradingFixture fixture = newFixture();
+        String account = fixture.fundedAccount("100000.00");
 
-        Order first = submit(trading, "compra-1").order();
-        Order second = submit(trading, "compra-2").order();
+        Order first = submit(fixture, account, "compra-1").order();
+        Order second = submit(fixture, account, "compra-2").order();
 
         assertNotEquals(first.getId(), second.getId());
-        assertEquals(2, journaledOrders(eventStore));
+        assertEquals(2, journaledOrders(fixture));
     }
 
     @Test
     void withoutKeyEachCallCreatesANewOrder() {
-        EventStore eventStore = new InMemoryEventStore();
-        TradingService trading = newTradingService(eventStore);
+        TradingFixture fixture = newFixture();
+        String account = fixture.fundedAccount("100000.00");
 
-        Order first = submit(trading, null).order();
-        Order second = submit(trading, null).order();
+        Order first = submit(fixture, account, null).order();
+        Order second = submit(fixture, account, null).order();
 
         assertNotEquals(first.getId(), second.getId());
-        assertEquals(2, journaledOrders(eventStore));
+        assertEquals(2, journaledOrders(fixture));
     }
 
     @Test
     void replayBringsTheKeyBackSoARetryAfterRestartDoesNotDuplicate() {
-        EventStore eventStore = new InMemoryEventStore();
-        Order accepted = submit(newTradingService(eventStore), "compra-1").order();
+        TradingFixture fixture = newFixture();
+        String account = fixture.fundedAccount("100000.00");
+        Order accepted = submit(fixture, account, "compra-1").order();
 
         // Reinicio: engine novo, mesmas ordens reconstruidas do journal.
-        TradingService restarted = newTradingService(eventStore);
-        restarted.rebuild(eventStore.readAll());
+        TradingFixture restarted = fixture.restart();
 
-        Order retried = submit(restarted, "compra-1").order();
+        Order retried = submit(restarted, account, "compra-1").order();
 
         assertEquals(accepted.getId(), retried.getId());
-        assertEquals(1, journaledOrders(eventStore));
+        assertEquals(1, journaledOrders(fixture));
     }
 
     @Test
     void sameKeyForAnotherCommandIsAReuseNotARetry() {
-        EventStore eventStore = new InMemoryEventStore();
-        TradingService trading = newTradingService(eventStore);
-        submit(trading, "compra-1");
+        TradingFixture fixture = newFixture();
+        String account = fixture.fundedAccount("100000.00");
+        submit(fixture, account, "compra-1");
 
         assertThrows(OrderIdempotencyKeyReusedException.class,
-            () -> trading.submitOrder(BACK_OFFICE, "VALE3", OrderSide.BUY, OrderType.LIMIT,
-                new BigDecimal("60.00"), 10, "conta-1", TimeInForce.GTC, "compra-1"));
+            () -> fixture.trading.submitOrder(TradingFixture.BACK_OFFICE, "VALE3", OrderSide.BUY,
+                OrderType.LIMIT, new BigDecimal("60.00"), 10, account, TimeInForce.GTC,
+                "compra-1"));
     }
 
     @Test
     void simultaneousRetriesWithTheSameKeyCreateOneOrder() throws Exception {
-        EventStore eventStore = new InMemoryEventStore();
-        TradingService trading = newTradingService(eventStore);
+        TradingFixture fixture = newFixture();
+        String account = fixture.fundedAccount("100000.00");
 
         int clients = 8;
         List<String> ids = Collections.synchronizedList(new ArrayList<>());
@@ -109,7 +105,7 @@ class OrderIdempotencyTest {
         for (int i = 0; i < clients; i++) {
             pending.add(pool.submit(() -> {
                 start.await();
-                ids.add(submit(trading, "compra-1").order().getId());
+                ids.add(submit(fixture, account, "compra-1").order().getId());
                 return null;
             }));
         }
@@ -121,22 +117,19 @@ class OrderIdempotencyTest {
 
         assertEquals(clients, ids.size());
         assertEquals(1, Set.copyOf(ids).size());
-        assertEquals(1, journaledOrders(eventStore));
+        assertEquals(1, journaledOrders(fixture));
     }
 
-    private OrderExecutionResult submit(TradingService trading, String idempotencyKey) {
-        return trading.submitOrder(BACK_OFFICE, "PETR4", OrderSide.BUY, OrderType.LIMIT,
-            new BigDecimal("38.50"), 10, "conta-1", TimeInForce.GTC, idempotencyKey);
+    private TradingFixture newFixture() {
+        return new TradingFixture(new InMemoryEventStore());
     }
 
-    private long journaledOrders(EventStore eventStore) {
-        return eventStore.readAll().stream().filter(OrderSubmitted.class::isInstance).count();
+    private OrderExecutionResult submit(TradingFixture fixture, String accountId, String idempotencyKey) {
+        return fixture.trading.submitOrder(TradingFixture.BACK_OFFICE, "PETR4", OrderSide.BUY,
+            OrderType.LIMIT, new BigDecimal("38.50"), 10, accountId, TimeInForce.GTC, idempotencyKey);
     }
 
-    private TradingService newTradingService(EventStore eventStore) {
-        RegulatoryValidationService validation = new RegulatoryValidationService(
-            new MarketHaltService(eventStore), new PriceBandProperties(), false, true, "00:00", "23:59");
-        return new TradingService(new MatchingEngine(), new OrderService(eventStore),
-            new PositionService(), new MetricsCollector(), validation, eventStore);
+    private long journaledOrders(TradingFixture fixture) {
+        return fixture.eventStore.readAll().stream().filter(OrderSubmitted.class::isInstance).count();
     }
 }
