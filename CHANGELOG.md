@@ -8,6 +8,10 @@ O formato segue [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/) e o 
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-10-19
+
+Quarta versão pública: durabilidade dos comandos do cliente e verdade da trilha. Ordens e transferências aceitam `Idempotency-Key` e a garantia vive no journal — o reenvio devolve o que já foi aceito, inclusive depois de um reinício —, cada evento grava quem o causou (o `sub` e os papéis daquele momento), e o journal deixou de registrar cancelamento ou amend que o engine recusou. Fecha também a porta de autenticação: o token carrega `aud: lastro-api`, a API o exige, e cada cliente do realm autoriza só o seu papel.
+
 ### Adicionado
 
 - A transferência também trata reenvio pela chave do cliente: `POST /api/transactions/transfer` aceita `Idempotency-Key`, a chave entra no evento `TransferCompleted` e o índice é remontado no replay. Antes a garantia vivia num mapa em memória com janela de 24h, que morria no reinício — ou seja, o reenvio de um cliente logo depois de um restart movimentava o dinheiro de novo. A mesma chave para outra transferência responde `409`; transferência que falhou por saldo insuficiente não vira fato e por isso não prende a chave (o reenvio tenta de novo).
