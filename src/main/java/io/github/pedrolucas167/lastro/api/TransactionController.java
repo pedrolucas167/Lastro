@@ -19,15 +19,21 @@ public class TransactionController {
         this.transactionService = transactionService;
     }
 
+    /**
+     * `Idempotency-Key` e a chave do cliente para reenvio: repetir a chamada com a mesma chave
+     * devolve a transferencia que ja foi feita, sem movimentar o dinheiro de novo.
+     */
     @PostMapping("/transfer")
     public ResponseEntity<TransactionResponse> transfer(Authentication authentication,
+                                                       @RequestHeader(value = "Idempotency-Key", required = false)
+                                                       String idempotencyKey,
                                                        @Valid @RequestBody TransactionRequest request) {
         Transaction transaction = transactionService.transfer(
             Roles.actor(authentication),
             request.getFromAccountId(),
             request.getToAccountId(),
             request.getAmount(),
-            request.getIdempotencyKey()
+            idempotencyKey
         );
         return ResponseEntity.ok(toResponse(transaction));
     }

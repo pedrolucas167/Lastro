@@ -5,7 +5,6 @@ import io.github.pedrolucas167.lastro.domain.Actor;
 import io.github.pedrolucas167.lastro.journal.EventStore;
 import io.github.pedrolucas167.lastro.journal.InMemoryEventStore;
 import io.github.pedrolucas167.lastro.service.AccountService;
-import io.github.pedrolucas167.lastro.service.IdempotencyService;
 import io.github.pedrolucas167.lastro.service.TransactionService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -30,8 +29,7 @@ class ConcurrencyTest {
     void setUp() {
         EventStore eventStore = new InMemoryEventStore();
         accountService = new AccountService(eventStore);
-        IdempotencyService idempotencyService = new IdempotencyService();
-        transactionService = new TransactionService(accountService, idempotencyService, eventStore);
+        transactionService = new TransactionService(accountService, eventStore);
     }
 
     @Test

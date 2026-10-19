@@ -42,7 +42,7 @@ O Lastro é uma plataforma de trading de mercado de capitais estruturada como um
 - **Metrics Collector**: Coleta métricas de sistema durante os testes
 - **Order Book**: Book de ofertas com price-time priority
 - **Matching Engine**: Engine de matching de ordens buy/sell
-- **Idempotency Service**: Garante idempotência em transferências entre contas (janela de 24h) e em ordens (chave do cliente registrada no journal)
+- **Chave de idempotência**: transferências e ordens guardam a chave do cliente no journal — o reenvio devolve o que já foi aceito sem repetir o efeito, e a garantia sobrevive ao reinício
 - **Event Journal**: Persistência append-only de eventos de domínio, com replay no startup
 - **Actuator**: Health checks e métricas de produção (Prometheus)
 - **OpenAPI**: Documentação automática da API em Swagger UI
@@ -262,7 +262,8 @@ Todas as rotas abaixo exigem `Authorization: Bearer <token>` com o papel adequad
 
 ### Transações
 
-- `POST /api/transactions/transfer` - Transferir entre contas (body: `{"fromAccountId": "x", "toAccountId": "y", "amount": 100.00, "idempotencyKey": "optional"}`)
+- `POST /api/transactions/transfer` - Transferir entre contas (body: `{"fromAccountId": "x", "toAccountId": "y", "amount": 100.00}`)
+  - Cabeçalho opcional `Idempotency-Key`, com a mesma semântica da ordem: reenviar a mesma transferência com a mesma chave devolve a que já foi feita, sem movimentar o dinheiro de novo. A chave fica no journal e volta no replay; a mesma chave para outra transferência responde `409`. Transferência que falhou por saldo insuficiente não vira fato, então não prende a chave — o reenvio tenta de novo.
 - `GET /api/transactions/{id}` - Buscar transação
 
 ### Mercado
