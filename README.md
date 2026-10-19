@@ -134,7 +134,7 @@ A API estará disponível em `http://localhost:8080`
 
 ### Autenticação e autorização
 
-A API é um **resource server OAuth2**: toda rota exige um JWT emitido pelo Keycloak, exceto `GET /actuator/health`, que é público para o HEALTHCHECK do container. A aplicação **não é** o provedor de identidade — só valida tokens (JWKS do Keycloak, emissor verificado).
+A API é um **resource server OAuth2**: toda rota exige um JWT emitido pelo Keycloak, exceto `GET /actuator/health`, que é público para o HEALTHCHECK do container. A aplicação **não é** o provedor de identidade — só valida tokens (JWKS do Keycloak, emissor e **audiência** verificados).
 
 O realm de desenvolvimento (`lastro`, em `deploy/keycloak/lastro-realm.json`) traz três papéis, e cada rota exige um deles:
 
@@ -154,6 +154,8 @@ O realm de desenvolvimento (`lastro`, em `deploy/keycloak/lastro-realm.json`) tr
 | `/actuator/metrics`, `/prometheus`, `/info` | – | ✓ | – |
 | `/v3/api-docs`, `/swagger-ui` | ✓ | ✓ | ✓ |
 | `GET /actuator/health` | público | público | público |
+
+**Audiência.** Todo token do realm carrega `aud: lastro-api` (um mapper de audiência em cada cliente), e a API exige essa audiência: um token emitido pelo mesmo Keycloak para outro cliente ou outro sistema é recusado com `401`, mesmo com o emissor certo. O papel também é do **cliente**, não do usuário: cada cliente autoriza só o seu papel (`fullScopeAllowed: false` com mapeamento explícito), então quem entra pelo cliente do titular não leva o papel de operador.
 
 O papel M2M faz apenas o que o load generator precisa — abrir conta e transferir. Todo o resto, inclusive movimentar saldo e acionar halt, é ato de operador: um cliente de serviço comprometido não movimenta dinheiro nem opera o mercado.
 
@@ -191,9 +193,9 @@ TOKEN_HOLDER=$(curl -s -X POST "http://localhost:8090/realms/lastro/protocol/ope
 curl -H "Authorization: Bearer $TOKEN_HOLDER" http://localhost:8080/api/accounts/mine
 ```
 
-Sem token a API responde `401`; com um token válido sem o papel exigido, `403`. As credenciais acima são de desenvolvimento — em produção, use um Keycloak próprio e outro segredo de cliente. E como o segredo do cliente M2M está no repositório, a aplicação **recusa subir** se ele for usado com um emissor que não seja localhost (`lastro.security.reject-dev-credentials=false` troca o erro por um aviso).
+Sem token a API responde `401`; com um token válido sem o papel exigido, `403` (e um token do mesmo emissor sem a audiência também é `401` — ele não é destinado a esta API). As credenciais acima são de desenvolvimento — em produção, use um Keycloak próprio e outro segredo de cliente. E como o segredo do cliente M2M está no repositório, a aplicação **recusa subir** se ele for usado com um emissor que não seja localhost (`lastro.security.reject-dev-credentials=false` troca o erro por um aviso).
 
-Para apontar para outro Keycloak, defina `spring.security.oauth2.resourceserver.jwt.issuer-uri` e `spring.security.oauth2.resourceserver.jwt.jwk-set-uri` (ou as variáveis de ambiente equivalentes). O `issuer-uri` é só validado, o JWKS é buscado sob demanda — a aplicação sobe mesmo com o Keycloak fora do ar.
+Para apontar para outro Keycloak, defina `spring.security.oauth2.resourceserver.jwt.issuer-uri`, `spring.security.oauth2.resourceserver.jwt.jwk-set-uri` e `spring.security.oauth2.resourceserver.jwt.audiences` (ou as variáveis de ambiente equivalentes). O `issuer-uri` é só validado, o JWKS é buscado sob demanda — a aplicação sobe mesmo com o Keycloak fora do ar. A audiência é obrigatória: no seu Keycloak, emita a audiência escolhida no `aud` (um mapper de audiência no cliente) e liste-a aqui; sem ela a API recusa todo token, de propósito.
 
 No Swagger UI, use **Authorize** e cole o token.
 

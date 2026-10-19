@@ -8,6 +8,7 @@ import org.springframework.http.HttpMethod;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
 import org.springframework.security.config.http.SessionCreationPolicy;
+import org.springframework.security.oauth2.core.DelegatingOAuth2TokenValidator;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.security.oauth2.jwt.JwtValidators;
 import org.springframework.security.oauth2.jwt.NimbusJwtDecoder;
@@ -20,13 +21,15 @@ public class SecurityConfig {
     /**
      * O decoder padrao do Spring exige o `issuer-uri`, e nesse modo ele busca o discovery
      * do Keycloak durante o startup -- a aplicacao nao sobe se o Keycloak estiver fora.
-     * Aqui o JWKS e buscado sob demanda e o emissor continua sendo validado.
+     * Aqui o JWKS e buscado sob demanda, e o emissor e a audiencia continuam sendo validados.
      */
     @Bean
     public JwtDecoder jwtDecoder(OAuth2ResourceServerProperties properties) {
         OAuth2ResourceServerProperties.Jwt jwt = properties.getJwt();
         NimbusJwtDecoder decoder = NimbusJwtDecoder.withJwkSetUri(jwt.getJwkSetUri()).build();
-        decoder.setJwtValidator(JwtValidators.createDefaultWithIssuer(jwt.getIssuerUri()));
+        decoder.setJwtValidator(new DelegatingOAuth2TokenValidator<>(
+            JwtValidators.createDefaultWithIssuer(jwt.getIssuerUri()),
+            new TokenAudienceValidator(jwt.getAudiences())));
         return decoder;
     }
 
