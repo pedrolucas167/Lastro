@@ -25,6 +25,11 @@ O formato segue [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/) e o 
 - `Actor` deixou de ser `(subject, privileged)` e passou a ser `(subject, roles)`, com "privilegiado" derivado dos papéis. O journal precisa da autoridade do momento: um booleano não distingue operador de serviço M2M, e papel revogado depois apagaria a informação. O vocabulário de papéis (`lastro-service`, `lastro-operator`, `lastro-holder`) saiu de `config.Roles` para `domain.Actor`, que é quem os carrega; `config.Roles` ficou só com a leitura do token. A matriz de rotas não mudou.
 - Journal gravado antes deste campo (payload sem `actor`) continua replayando, com o ator vazio — o replay não depende dele.
 
+### Segurança
+
+- O realm não emitia `aud` nenhum, e a API validava só o emissor — ou seja, **qualquer** token que aquele Keycloak emitisse valia na API, inclusive um destinado a outro cliente ou a outro sistema do mesmo realm. Agora todo token carrega `aud: lastro-api` (mapper de audiência em cada cliente, no `deploy/keycloak/lastro-realm.json`) e a API valida a audiência além do emissor (`spring.security.oauth2.resourceserver.jwt.audiences`). Sem audiência configurada a API recusa todo token, em vez de aceitar qualquer um: falha alta na primeira requisição é melhor do que servir com a porta aberta.
+- Os clientes do realm tinham `fullScopeAllowed` ligado, então o token carregava os papéis do **usuário**, não os do cliente: um operador que entrasse pelo cliente `lastro-holder` levava `lastro-operator` no token. Agora o escopo é explícito por cliente (`scopeMappings`, `fullScopeAllowed: false`) e o token carrega só o papel daquele cliente — quem entra pelo cliente errado não leva poder nenhum.
+
 ## [0.3.0] - 2026-10-18
 
 Terceira versão pública: vínculo entre conta e titular — o titular é o `sub` do Keycloak, o papel `lastro-holder` só enxerga e só movimenta as contas que tem, e a titularidade é um fato do journal. Inclui também a recusa de subida com credencial de desenvolvimento contra emissor não-local.
