@@ -5,6 +5,8 @@ import io.github.pedrolucas167.lastro.domain.Order;
 import io.github.pedrolucas167.lastro.domain.OrderSide;
 import io.github.pedrolucas167.lastro.domain.OrderType;
 import io.github.pedrolucas167.lastro.exception.RegulatoryException;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
@@ -31,6 +33,8 @@ import java.util.Map;
  */
 @Service
 public class PreTradeRiskService {
+
+    private static final Logger logger = LoggerFactory.getLogger(PreTradeRiskService.class);
 
     private final AccountService accountService;
     private final PositionService positionService;
@@ -120,6 +124,10 @@ public class PreTradeRiskService {
      * Restaura o bloqueio no replay: para cada ordem ainda em aberto, o lastro e o que ela ainda
      * pode executar. A soma por conta (e por conta/simbolo, na venda) e o estado reconstruido -- a
      * conta nao aceita ordem nova ate cobri-lo.
+     *
+     * Um journal anterior ao lastro pode ter ordem de conta que nunca foi aberta (a API aceitava
+     * qualquer id): nao ha onde bloquear, e a ordem fica sem lastro reconstruido -- com aviso, para
+     * o operador saber qual e.
      */
     public void rebuildHolds(Collection<Order> orders) {
         Map<String, BigDecimal> cashByAccount = new HashMap<>();
@@ -127,6 +135,11 @@ public class PreTradeRiskService {
 
         for (Order order : orders) {
             if (!order.isOpen()) {
+                continue;
+            }
+            if (!accountService.hasAccount(order.getAccountId())) {
+                logger.warn("Order {} belongs to account {}, which the journal never opened: "
+                    + "no hold to rebuild", order.getId(), order.getAccountId());
                 continue;
             }
             if (order.getSide() == OrderSide.BUY) {

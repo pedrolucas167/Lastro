@@ -6,11 +6,15 @@ import io.github.pedrolucas167.lastro.domain.OrderSide;
 import io.github.pedrolucas167.lastro.domain.OrderType;
 import io.github.pedrolucas167.lastro.domain.TimeInForce;
 import io.github.pedrolucas167.lastro.domain.Trade;
+import io.github.pedrolucas167.lastro.journal.EventStore;
 import io.github.pedrolucas167.lastro.journal.InMemoryEventStore;
+import io.github.pedrolucas167.lastro.journal.OrderSubmitted;
+import io.github.pedrolucas167.lastro.journal.TradeExecuted;
 import io.github.pedrolucas167.lastro.support.TradingFixture;
 import org.junit.jupiter.api.Test;
 
 import java.math.BigDecimal;
+import java.time.Instant;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -93,5 +97,38 @@ class TradingJournalReplayTest {
         List<String> priority = fixture.restart().trading.getOrderBook("ITUB4")
             .getBidsAtPrice(new BigDecimal("30.00")).stream().map(Order::getId).toList();
         assertEquals(List.of(second.getId(), first.getId()), priority);
+    }
+
+    /**
+     * A 0.4.0 aceitava ordem para qualquer accountId: o journal dela pode ter ordem de conta que
+     * nunca existiu. Nao ha lastro para reconstruir, e a subida nao pode depender disso.
+     */
+    @Test
+    void keepsAnOpenOrderOfAnAccountTheJournalNeverOpened() {
+        EventStore store = new InMemoryEventStore();
+        store.append(new OrderSubmitted("ordem-orfa", "PETR4", OrderSide.BUY, OrderType.LIMIT,
+            new BigDecimal("30.50"), 100, "conta-que-nao-existe", TimeInForce.GTC, null,
+            TradingFixture.BACK_OFFICE, Instant.now()));
+
+        TradingFixture replayed = new TradingFixture(store).restart();
+
+        assertEquals(100, replayed.trading.getOrderBook("PETR4").getTotalBidQuantity());
+    }
+
+    @Test
+    void toleratesATradeOfAnAccountTheJournalNeverOpened() {
+        EventStore store = new InMemoryEventStore();
+        TradingFixture seed = new TradingFixture(store);
+        String seller = seed.accountWithShares("0.00", "PETR4", 100, "30.00");
+        store.append(new TradeExecuted("trade-orfao", "PETR4", "ordem-de-compra-orfa",
+            "ordem-de-venda", new BigDecimal("30.50"), 100, "conta-que-nao-existe", seller,
+            TradingFixture.BACK_OFFICE, Instant.now()));
+
+        TradingFixture replayed = new TradingFixture(store).restart();
+
+        // O trade do journal nao inventa caixa para a conta que nao existe.
+        assertEquals(0, BigDecimal.ZERO.compareTo(
+            replayed.accounts.getAccount(seller).getBalance()));
+        assertEquals(1, replayed.trading.getTrades().size());
     }
 }

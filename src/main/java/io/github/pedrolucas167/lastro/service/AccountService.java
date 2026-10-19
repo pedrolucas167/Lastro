@@ -185,10 +185,28 @@ public class AccountService implements JournalRebuildable {
             if (event instanceof MoneyEvent moneyEvent) {
                 apply(moneyEvent);
             } else if (event instanceof TradeExecuted trade) {
-                settleTrade(trade.buyAccountId(), trade.sellAccountId(), trade.price(),
-                    trade.quantity());
+                rebuildTrade(trade);
             }
         }
+    }
+
+    /**
+     * O trade do journal liquida as contas que ele cita. Um journal anterior ao lastro pode citar
+     * conta que nunca foi aberta -- a API aceitava qualquer id --, e nao ha onde lancar o caixa
+     * desse lado: inventar a conta (e o dinheiro) seria pior que dizer o que ficou de fora.
+     */
+    private void rebuildTrade(TradeExecuted trade) {
+        if (!hasAccount(trade.buyAccountId()) || !hasAccount(trade.sellAccountId())) {
+            logger.warn("Trade {} cites an account the journal never opened ({} pays {}): "
+                + "cash not settled", trade.tradeId(), trade.buyAccountId(), trade.sellAccountId());
+            return;
+        }
+        settleTrade(trade.buyAccountId(), trade.sellAccountId(), trade.price(), trade.quantity());
+    }
+
+    /** Se a conta existe no que o journal reconstruiu; sem lancar quando nao existe. */
+    public boolean hasAccount(String accountId) {
+        return accounts.containsKey(accountId);
     }
 
     private void apply(MoneyEvent event) {
