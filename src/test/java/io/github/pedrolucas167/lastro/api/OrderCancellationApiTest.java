@@ -52,9 +52,12 @@ class OrderCancellationApiTest {
     @MockitoBean
     private JwtDecoder jwtDecoder;
 
+    private String buyAccount;
+
     @BeforeEach
-    void setUp() {
+    void setUp() throws Exception {
         given(jwtDecoder.decode("operador")).willReturn(jwtWithOperatorRole());
+        buyAccount = ApiAccounts.funded(mockMvc, "100000.00");
     }
 
     @Test
@@ -113,12 +116,16 @@ class OrderCancellationApiTest {
     }
 
     private String submit(String symbol, String side, String price, int quantity) throws Exception {
+        // A venda precisa ter a acao: a conta vendedora nasce com ela em custodia.
+        String accountId = "BUY".equals(side)
+            ? buyAccount
+            : ApiAccounts.withShares(mockMvc, symbol, quantity, price);
         MvcResult created = mockMvc.perform(post("/api/trading/orders")
                 .header("Authorization", OPERATOR)
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("{\"symbol\": \"%s\", \"side\": \"%s\", \"type\": \"LIMIT\", \"price\": %s, "
                     .formatted(symbol, side, price)
-                    + "\"quantity\": " + quantity + ", \"accountId\": \"acc-cancelamento\"}"))
+                    + "\"quantity\": " + quantity + ", \"accountId\": \"" + accountId + "\"}"))
             .andExpect(status().isOk())
             .andReturn();
         return JsonPath.read(created.getResponse().getContentAsString(), "$.id");

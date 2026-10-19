@@ -41,9 +41,12 @@ class OrderIdempotencyApiTest {
     @MockitoBean
     private JwtDecoder jwtDecoder;
 
+    private String accountId;
+
     @BeforeEach
-    void setUp() {
+    void setUp() throws Exception {
         given(jwtDecoder.decode("operador")).willReturn(jwtWithOperatorRole());
+        accountId = ApiAccounts.funded(mockMvc, "100000.00");
     }
 
     @Test
@@ -84,7 +87,7 @@ class OrderIdempotencyApiTest {
     // 30.50 esta dentro da banda de preco do PETR4 (referencia 30.50).
     private String orderBody() {
         return "{\"symbol\": \"PETR4\", \"side\": \"BUY\", \"type\": \"LIMIT\", \"price\": 30.50, "
-            + "\"quantity\": 100, \"accountId\": \"acc-idempotencia\"}";
+            + "\"quantity\": 100, \"accountId\": \"" + accountId + "\"}";
     }
 
     private String createOrder(String idempotencyKey, String body) throws Exception {

@@ -68,6 +68,20 @@ public class Order {
         return status.get();
     }
 
+    /** Uma ordem aberta ainda pode executar -- e por isso ainda garante lastro. */
+    public boolean isOpen() {
+        return status.get() == OrderStatus.PENDING || status.get() == OrderStatus.PARTIALLY_FILLED;
+    }
+
+    /** Quantidade que ficaria em aberto se a ordem fosse alterada para essa quantidade. */
+    public int remainingAfterAmend(int newQuantity) {
+        return newQuantity - filledQuantity();
+    }
+
+    private int filledQuantity() {
+        return originalQuantity.intValue() - remainingQuantity.get();
+    }
+
     public Instant getCreatedAt() {
         return createdAt;
     }
@@ -138,8 +152,7 @@ public class Order {
                 return false;
             }
 
-            int filledQuantity = originalQuantity.intValue() - remainingQuantity.get();
-            int newRemaining = newQuantity.intValue() - filledQuantity;
+            int newRemaining = remainingAfterAmend(newQuantity.intValue());
             if (newRemaining < 0) {
                 return false;
             }
@@ -147,7 +160,7 @@ public class Order {
             this.price = newPrice;
             this.originalQuantity = newQuantity;
             this.remainingQuantity.set(newRemaining);
-            this.status.set(statusAfterAmend(newRemaining, filledQuantity));
+            this.status.set(statusAfterAmend(newRemaining, filledQuantity()));
             return true;
         } finally {
             lock.unlock();

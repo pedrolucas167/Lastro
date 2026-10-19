@@ -28,6 +28,8 @@ public class JournalReplay implements ApplicationRunner {
             return;
         }
 
+        // A ordem respeita o @Order de cada rebuildable: o TradingService reconstroi o bloqueio das
+        // ordens em aberto sobre as contas que o AccountService acabou de reconstruir.
         rebuildables.forEach(rebuildable -> rebuildable.rebuild(events));
         logger.info("Rebuilt in-memory state from {} journaled events", events.size());
     }

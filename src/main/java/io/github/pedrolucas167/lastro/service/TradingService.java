@@ -1,7 +1,16 @@
 package io.github.pedrolucas167.lastro.service;
 
-import io.github.pedrolucas167.lastro.domain.*;
+import io.github.pedrolucas167.lastro.domain.Actor;
+import io.github.pedrolucas167.lastro.domain.MatchingEngine;
+import io.github.pedrolucas167.lastro.domain.Order;
+import io.github.pedrolucas167.lastro.domain.OrderBook;
+import io.github.pedrolucas167.lastro.domain.OrderSide;
+import io.github.pedrolucas167.lastro.domain.OrderStatus;
+import io.github.pedrolucas167.lastro.domain.OrderType;
+import io.github.pedrolucas167.lastro.domain.TimeInForce;
+import io.github.pedrolucas167.lastro.domain.Trade;
 import io.github.pedrolucas167.lastro.exception.OrderIdempotencyKeyReusedException;
+import io.github.pedrolucas167.lastro.journal.CustodyTransferred;
 import io.github.pedrolucas167.lastro.journal.DomainEvent;
 import io.github.pedrolucas167.lastro.journal.EventStore;
 import io.github.pedrolucas167.lastro.journal.JournalRebuildable;
@@ -21,25 +30,35 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 
+/**
+ * Onde a ordem nasce, executa e morre. Antes de a ordem existir, o lastro dela e bloqueado; o que
+ * a ordem executa vira pagamento e o que ela nao executa volta ao disponivel.
+ */
 @Service
+@org.springframework.core.annotation.Order(2)
 public class TradingService implements JournalRebuildable {
     private static final Logger logger = LoggerFactory.getLogger(TradingService.class);
     private final MatchingEngine matchingEngine;
     private final OrderService orderService;
     private final PositionService positionService;
+    private final AccountService accountService;
     private final MetricsCollector metricsCollector;
     private final RegulatoryValidationService regulatoryValidationService;
+    private final PreTradeRiskService riskService;
     private final EventStore eventStore;
 
     public TradingService(MatchingEngine matchingEngine, OrderService orderService,
-                         PositionService positionService, MetricsCollector metricsCollector,
+                         PositionService positionService, AccountService accountService,
+                         MetricsCollector metricsCollector,
                          RegulatoryValidationService regulatoryValidationService,
-                         EventStore eventStore) {
+                         PreTradeRiskService riskService, EventStore eventStore) {
         this.matchingEngine = matchingEngine;
         this.orderService = orderService;
         this.positionService = positionService;
+        this.accountService = accountService;
         this.metricsCollector = metricsCollector;
         this.regulatoryValidationService = regulatoryValidationService;
+        this.riskService = riskService;
         this.eventStore = eventStore;
     }
 
@@ -66,12 +85,24 @@ public class TradingService implements JournalRebuildable {
 
         regulatoryValidationService.validateOrder(symbol, side, type, price, quantity, accountId);
 
-        // O OrderService registra o OrderSubmitted no journal ao criar a ordem.
-        OrderService.Creation creation = orderService.createOrderWithIdempotencyKey(actor, symbol, side,
-            type, price, quantity, accountId, timeInForce, idempotencyKey);
+        // O lastro e bloqueado antes de a ordem existir: ordem sem lastro nao vira fato no journal.
+        BigDecimal reserved = riskService.reserveForNewOrder(symbol, side, type, price, quantity,
+            accountId);
+
+        OrderService.Creation creation;
+        try {
+            // O OrderService registra o OrderSubmitted no journal ao criar a ordem.
+            creation = orderService.createOrderWithIdempotencyKey(actor, symbol, side, type, price,
+                quantity, accountId, timeInForce, idempotencyKey);
+        } catch (RuntimeException e) {
+            riskService.releaseReserved(accountId, symbol, side, reserved);
+            throw e;
+        }
 
         if (!creation.created()) {
-            // Corrida: outra chamada com a mesma chave criou a ordem entre a consulta e aqui.
+            // Corrida: outra chamada com a mesma chave criou a ordem entre a consulta e aqui. O
+            // lastro desta tentativa volta: quem o usa e a ordem que ja existe.
+            riskService.releaseReserved(accountId, symbol, side, reserved);
             return retryOf(creation.order(), symbol, side, type, timeInForce, accountId);
         }
 
@@ -82,6 +113,9 @@ public class TradingService implements JournalRebuildable {
             recordTrades(actor, trades);
             logger.info("Order {} generated {} trades", order.getId(), trades.size());
         }
+
+        // Ordem que nao repousou (IOC, FOK ou mercado) devolve o lastro do que nao executou.
+        riskService.releaseUnfilled(order);
 
         return new OrderExecutionResult(order, trades);
     }
@@ -117,13 +151,17 @@ public class TradingService implements JournalRebuildable {
         regulatoryValidationService.validateOrder(symbol, order.getSide(), order.getType(),
             price, quantity, order.getAccountId());
 
+        // O amend so vale com lastro para o que ele passa a pedir, checado antes do engine.
+        PreTradeRiskService.AmendHold hold = riskService.reserveForAmend(order, price, quantity);
+
         BigDecimal amendedQuantity = new BigDecimal(quantity);
 
         Optional<List<Trade>> generatedTrades =
             matchingEngine.replaceOrder(orderId, symbol, price, amendedQuantity);
         if (generatedTrades.isEmpty()) {
-            // O engine recusou (fora de repouso ou amend invalido): nada aconteceu, entao nada
-            // vai para o journal.
+            // O engine recusou (fora de repouso ou amend invalido): nada aconteceu, entao nada vai
+            // para o journal -- e o lastro bloqueado a mais volta.
+            riskService.rollbackAmend(order, hold);
             return Optional.empty();
         }
 
@@ -131,6 +169,7 @@ public class TradingService implements JournalRebuildable {
 
         List<Trade> trades = generatedTrades.get();
         recordTrades(actor, trades);
+        riskService.finishAmend(order, hold);
         logger.info("Order {} replaced and generated {} trades", orderId, trades.size());
 
         return Optional.of(new OrderExecutionResult(order, trades));
@@ -142,6 +181,14 @@ public class TradingService implements JournalRebuildable {
             eventStore.append(new TradeExecuted(trade.getId(), trade.getSymbol(),
                 trade.getBuyOrderId(), trade.getSellOrderId(), trade.getPrice(), trade.getQuantity(),
                 trade.getBuyAccountId(), trade.getSellAccountId(), actor, trade.getTimestamp()));
+            // O trade e o fato e o caixa e consequencia: o comprador paga, o vendedor recebe.
+            accountService.settleTrade(trade.getBuyAccountId(), trade.getSellAccountId(),
+                trade.getPrice(), trade.getQuantity());
+            // O que executou deixou de ser bloqueio, nos dois lados da ponta.
+            riskService.releaseFilled(orderService.getOrder(trade.getBuyOrderId()),
+                trade.getQuantity());
+            riskService.releaseFilled(orderService.getOrder(trade.getSellOrderId()),
+                trade.getQuantity());
             positionService.processTrade(trade);
             metricsCollector.recordTrade(trade);
         }
@@ -162,6 +209,8 @@ public class TradingService implements JournalRebuildable {
 
         if (matchingEngine.cancelOrder(orderId, symbol)) {
             eventStore.append(new OrderCancelled(orderId, symbol, actor, Instant.now()));
+            // A ordem cancelada devolve o lastro do que sobrou para executar.
+            riskService.releaseUnfilled(order);
             logger.info("Order {} cancelled", orderId);
             return CancelOutcome.CANCELLED;
         }
@@ -209,6 +258,10 @@ public class TradingService implements JournalRebuildable {
      * Reconstroi o engine a partir do journal, reexecutando os comandos na mesma ordem.
      * Como o matching e deterministico, o book e as posicoes voltam ao mesmo estado; os
      * trades sao restaurados do journal (preservando id e timestamp).
+     *
+     * O bloqueio das ordens em aberto e a ultima coisa: ele sai das ordens que o replay acabou de
+     * reconstruir e precisa das contas que o {@link AccountService} reconstroi antes (por isso a
+     * ordem desta classe no replay).
      */
     public void rebuild(List<DomainEvent> events) {
         clear();
@@ -226,14 +279,19 @@ public class TradingService implements JournalRebuildable {
                 case OrderCancelled e -> matchingEngine.cancelOrder(e.orderId(), e.symbol());
                 case OrderReplaced e -> matchingEngine.replaceOrder(e.orderId(), e.symbol(),
                     e.price(), e.quantity());
-                case TradeExecuted e -> journaledTrades.add(new Trade(e.tradeId(), e.symbol(),
-                    e.buyOrderId(), e.sellOrderId(), e.price(), e.quantity(), e.buyAccountId(),
-                    e.sellAccountId(), e.occurredAt()));
+                case TradeExecuted e -> {
+                    Trade trade = new Trade(e.tradeId(), e.symbol(), e.buyOrderId(), e.sellOrderId(),
+                        e.price(), e.quantity(), e.buyAccountId(), e.sellAccountId(), e.occurredAt());
+                    journaledTrades.add(trade);
+                    positionService.processTrade(trade);
+                }
+                case CustodyTransferred e -> positionService.applyCustody(e.fromAccountId(),
+                    e.toAccountId(), e.symbol(), e.quantity(), e.price());
             }
         }
 
         matchingEngine.replaceTrades(journaledTrades);
-        journaledTrades.forEach(positionService::processTrade);
+        riskService.rebuildHolds(orderService.openOrders());
     }
 
     public void clear() {

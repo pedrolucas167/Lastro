@@ -4,6 +4,8 @@ import jakarta.validation.Valid;
 import io.github.pedrolucas167.lastro.config.Roles;
 import io.github.pedrolucas167.lastro.domain.*;
 import io.github.pedrolucas167.lastro.dto.*;
+import io.github.pedrolucas167.lastro.service.CustodyService;
+import io.github.pedrolucas167.lastro.service.CustodyTransfer;
 import io.github.pedrolucas167.lastro.service.OrderExecutionResult;
 import io.github.pedrolucas167.lastro.service.TradingService;
 import org.springframework.http.HttpStatus;
@@ -19,9 +21,11 @@ import java.util.stream.Collectors;
 @RequestMapping("/api/trading")
 public class TradingController {
     private final TradingService tradingService;
+    private final CustodyService custodyService;
 
-    public TradingController(TradingService tradingService) {
+    public TradingController(TradingService tradingService, CustodyService custodyService) {
         this.tradingService = tradingService;
+        this.custodyService = custodyService;
     }
 
     /**
@@ -158,5 +162,28 @@ public class TradingController {
                                             @RequestParam BigDecimal currentPrice) {
         BigDecimal pnl = tradingService.getPositionPnL(accountId, symbol, currentPrice);
         return ResponseEntity.ok(pnl);
+    }
+
+    /**
+     * Deposito de custodia: a acao entra no sistema, vinda de fora, no custo medio informado. E
+     * como a acao passa a existir para ser vendida.
+     */
+    @PostMapping("/positions/deposit")
+    public ResponseEntity<CustodyTransferResponse> depositCustody(
+            Authentication authentication, @Valid @RequestBody CustodyDepositRequest request) {
+        CustodyTransfer transfer = custodyService.deposit(Roles.actor(authentication),
+            request.getAccountId(), request.getSymbol(), request.getQuantity(),
+            request.getPrice());
+        return ResponseEntity.ok(CustodyTransferResponse.of(transfer));
+    }
+
+    /** Custodia: a acao passa de uma conta para outra sem passar pelo mercado. */
+    @PostMapping("/positions/transfer")
+    public ResponseEntity<CustodyTransferResponse> transferCustody(
+            Authentication authentication, @Valid @RequestBody CustodyTransferRequest request) {
+        CustodyTransfer transfer = custodyService.transfer(Roles.actor(authentication),
+            request.getFromAccountId(), request.getToAccountId(), request.getSymbol(),
+            request.getQuantity());
+        return ResponseEntity.ok(CustodyTransferResponse.of(transfer));
     }
 }

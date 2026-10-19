@@ -58,9 +58,12 @@ class MarketHaltApiTest {
     @MockitoBean
     private JwtDecoder jwtDecoder;
 
+    private String accountId;
+
     @BeforeEach
-    void setUp() {
+    void setUp() throws Exception {
         given(jwtDecoder.decode("operador")).willReturn(jwtWithOperatorRole());
+        accountId = ApiAccounts.funded(mockMvc, "100000.00");
     }
 
     @AfterEach
@@ -169,7 +172,7 @@ class MarketHaltApiTest {
     private String orderBody(String symbol) {
         return "{\"symbol\": \"%s\", \"side\": \"BUY\", \"type\": \"LIMIT\", \"price\": 30.50, "
             .formatted(symbol)
-            + "\"quantity\": 100, \"accountId\": \"acc-1\"}";
+            + "\"quantity\": 100, \"accountId\": \"" + accountId + "\"}";
     }
 
     private boolean journaled(Class<? extends MarketEvent> type, String symbol) {
