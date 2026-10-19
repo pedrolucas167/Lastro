@@ -8,7 +8,9 @@ O formato segue [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/) e o 
 
 ## [Unreleased]
 
-Pré-trade, liquidação e custódia: nenhuma ordem chega ao engine sem lastro e o trade move o caixa no ato.
+## [0.5.0] - 2026-10-19
+
+Quinta versão pública: lastro, liquidação e custódia. Nenhuma ordem chega ao engine sem lastro — a compra bloqueia o caixa que ainda pode gastar (saldo menos o que já está prometido a ordens em aberto) e a venda bloqueia a ação —, e o trade liquida no ato: o comprador paga e o vendedor recebe no mesmo instante, com o `TradeExecuted` carregando tudo o que a liquidação precisa. A ação passa a entrar no sistema pela custódia (depósito e transferência), sem a qual uma conta nova não teria o que vender; ordem a mercado deixou de repousar (o que não executa é cancelado, fechando o `500` da execução seguinte, e a compra a mercado é limitada pelo teto da banda); e o journal deixa de aceitar ordem sem dinheiro ou sem ação por trás.
 
 ### Adicionado
 
