@@ -84,6 +84,39 @@ class JdbcEventStoreTest {
         assertEquals(new SymbolResumed("PETR4", OPERATOR, haltedAt.plusSeconds(600)), events.get(1));
     }
 
+    @Test
+    void roundTripsTransferCompletedWithTheIdempotencyKey() {
+        Instant at = Instant.parse("2026-01-01T10:00:00Z");
+        eventStore.append(new TransferCompleted("tx-1", "acc-1", "acc-2", new BigDecimal("50.00"), "chave-1",
+            OPERATOR, at));
+
+        List<DomainEvent> events = eventStore.readAll();
+
+        assertEquals(1, events.size());
+        assertEquals(new TransferCompleted("tx-1", "acc-1", "acc-2", new BigDecimal("50.00"), "chave-1",
+            OPERATOR, at), events.get(0));
+    }
+
+    /** Transferencia gravada antes da chave nao tem o campo: o replay tem que continuar lendo. */
+    @Test
+    void replaysTransfersJournaledBeforeTheKeyExisted() {
+        Instant at = Instant.parse("2026-01-01T10:00:00Z");
+        jdbcTemplate.update(
+            "INSERT INTO journal_events (event_type, payload, occurred_at) VALUES (?, ?, ?)",
+            "TransferCompleted",
+            "{\"transactionId\":\"tx-old\",\"fromAccountId\":\"acc-1\",\"toAccountId\":\"acc-2\","
+                + "\"amount\":50.00,\"actor\":{\"subject\":\"operador\",\"roles\":[\"lastro-operator\"]},"
+                + "\"occurredAt\":\"2026-01-01T10:00:00Z\"}",
+            Timestamp.from(at));
+
+        List<DomainEvent> events = eventStore.readAll();
+
+        assertEquals(1, events.size());
+        TransferCompleted event = (TransferCompleted) events.get(0);
+        assertEquals("tx-old", event.transactionId());
+        assertNull(event.idempotencyKey());
+    }
+
     /** O journal gravado antes do ator nao tem o campo: o replay tem que continuar lendo. */
     @Test
     void replaysEventsJournaledBeforeTheActorExisted() {

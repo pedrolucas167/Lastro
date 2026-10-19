@@ -7,6 +7,7 @@ import io.github.pedrolucas167.lastro.domain.TransactionStatus;
 import io.github.pedrolucas167.lastro.domain.TransactionType;
 import io.github.pedrolucas167.lastro.exception.AccountAccessDeniedException;
 import io.github.pedrolucas167.lastro.exception.TransactionFailedException;
+import io.github.pedrolucas167.lastro.exception.TransferIdempotencyKeyReusedException;
 import io.github.pedrolucas167.lastro.journal.DomainEvent;
 import io.github.pedrolucas167.lastro.journal.EventStore;
 import io.github.pedrolucas167.lastro.journal.JournalRebuildable;
@@ -26,14 +27,12 @@ import java.util.concurrent.ConcurrentHashMap;
 public class TransactionService implements JournalRebuildable {
     private static final Logger logger = LoggerFactory.getLogger(TransactionService.class);
     private final AccountService accountService;
-    private final IdempotencyService idempotencyService;
     private final EventStore eventStore;
     private final Map<String, Transaction> transactions = new ConcurrentHashMap<>();
+    private final Map<String, Transaction> transactionsByIdempotencyKey = new ConcurrentHashMap<>();
 
-    public TransactionService(AccountService accountService, IdempotencyService idempotencyService,
-                              EventStore eventStore) {
+    public TransactionService(AccountService accountService, EventStore eventStore) {
         this.accountService = accountService;
-        this.idempotencyService = idempotencyService;
         this.eventStore = eventStore;
     }
 
@@ -41,16 +40,36 @@ public class TransactionService implements JournalRebuildable {
         return transfer(actor, fromAccountId, toAccountId, amount, null);
     }
 
+    /**
+     * Transfere e reivindica a chave de idempotencia na mesma operacao: dois reenvios simultaneos
+     * com a mesma chave movimentam o dinheiro uma vez so, e o segundo recebe a transferencia que
+     * ja foi feita.
+     */
     public Transaction transfer(Actor actor, String fromAccountId, String toAccountId, BigDecimal amount,
                                 String idempotencyKey) {
-        if (idempotencyKey != null && !idempotencyKey.isBlank()) {
-            return idempotencyService.getOrRecord(idempotencyKey, Instant.now(), 
-                () -> executeTransfer(actor, fromAccountId, toAccountId, amount));
+        if (isBlank(idempotencyKey)) {
+            return executeTransfer(actor, fromAccountId, toAccountId, amount, null);
         }
-        return executeTransfer(actor, fromAccountId, toAccountId, amount);
+
+        Transaction transaction = transactionsByIdempotencyKey.computeIfAbsent(idempotencyKey,
+            key -> executeTransfer(actor, fromAccountId, toAccountId, amount, key));
+
+        if (transaction.getStatus() != TransactionStatus.COMPLETED) {
+            // Tentativa que nao virou fato: o journal nao tem o que devolver num reenvio, entao
+            // a chave nao fica presa a ela e o reenvio tenta de novo.
+            transactionsByIdempotencyKey.remove(idempotencyKey, transaction);
+            return transaction;
+        }
+
+        if (!sameCommand(transaction, fromAccountId, toAccountId, amount)) {
+            throw new TransferIdempotencyKeyReusedException(transaction.getId());
+        }
+
+        return transaction;
     }
 
-    private Transaction executeTransfer(Actor actor, String fromAccountId, String toAccountId, BigDecimal amount) {
+    private Transaction executeTransfer(Actor actor, String fromAccountId, String toAccountId, BigDecimal amount,
+                                        String idempotencyKey) {
         String transactionId = UUID.randomUUID().toString();
         Transaction transaction = new Transaction(
             transactionId, fromAccountId, toAccountId, amount, TransactionType.TRANSFER
@@ -66,7 +85,8 @@ public class TransactionService implements JournalRebuildable {
 
             if (fromAccount.tryDebit(amount)) {
                 toAccount.credit(amount);
-                journalTransfer(transactionId, fromAccountId, toAccountId, amount, actor, fromAccount, toAccount);
+                journalTransfer(transactionId, fromAccountId, toAccountId, amount, idempotencyKey, actor,
+                    fromAccount, toAccount);
                 transaction.setStatus(TransactionStatus.COMPLETED);
                 logger.info("Transfer {} completed successfully", transactionId);
             } else {
@@ -87,10 +107,11 @@ public class TransactionService implements JournalRebuildable {
     }
 
     private void journalTransfer(String transactionId, String fromAccountId, String toAccountId,
-                                 BigDecimal amount, Actor actor, Account fromAccount, Account toAccount) {
+                                 BigDecimal amount, String idempotencyKey, Actor actor, Account fromAccount,
+                                 Account toAccount) {
         try {
             eventStore.append(new TransferCompleted(
-                transactionId, fromAccountId, toAccountId, amount, actor, Instant.now()));
+                transactionId, fromAccountId, toAccountId, amount, idempotencyKey, actor, Instant.now()));
         } catch (RuntimeException e) {
             // A transferencia ja foi aplicada em memoria; desfaz para nao divergir do journal.
             toAccount.debit(amount);
@@ -99,15 +120,19 @@ public class TransactionService implements JournalRebuildable {
         }
     }
 
-    /** Reconstroi as transacoes a partir do journal. */
+    /** Reconstroi as transacoes a partir do journal. A chave de idempotencia volta com elas. */
     public void rebuild(List<DomainEvent> events) {
         transactions.clear();
+        transactionsByIdempotencyKey.clear();
         for (DomainEvent event : events) {
             if (event instanceof TransferCompleted e) {
                 Transaction transaction = new Transaction(
                     e.transactionId(), e.fromAccountId(), e.toAccountId(), e.amount(), TransactionType.TRANSFER);
                 transaction.setStatus(TransactionStatus.COMPLETED);
                 transactions.put(e.transactionId(), transaction);
+                if (!isBlank(e.idempotencyKey())) {
+                    transactionsByIdempotencyKey.put(e.idempotencyKey(), transaction);
+                }
             }
         }
     }
@@ -129,5 +154,17 @@ public class TransactionService implements JournalRebuildable {
     private boolean touches(Actor actor, Transaction transaction) {
         return accountService.canAccess(actor, transaction.getFromAccountId())
             || accountService.canAccess(actor, transaction.getToAccountId());
+    }
+
+    /** Chave repetida para outra transferencia e erro do cliente, nao reenvio. */
+    private static boolean sameCommand(Transaction transaction, String fromAccountId, String toAccountId,
+                                       BigDecimal amount) {
+        return transaction.getFromAccountId().equals(fromAccountId)
+            && transaction.getToAccountId().equals(toAccountId)
+            && transaction.getAmount().compareTo(amount) == 0;
+    }
+
+    private static boolean isBlank(String value) {
+        return value == null || value.isBlank();
     }
 }

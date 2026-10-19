@@ -23,7 +23,7 @@ class PersistenceReplayTest {
         EventStore eventStore = new InMemoryEventStore();
         AccountService accountService = new AccountService(eventStore);
         TransactionService transactionService =
-            new TransactionService(accountService, new IdempotencyService(), eventStore);
+            new TransactionService(accountService, eventStore);
 
         Account from = accountService.createAccount(BACK_OFFICE, new BigDecimal("1000.00"));
         Account to = accountService.createAccount(BACK_OFFICE, new BigDecimal("500.00"));
@@ -34,7 +34,7 @@ class PersistenceReplayTest {
         // Simula um reinicio: servicos novos, mesmo journal.
         AccountService replayedAccounts = new AccountService(eventStore);
         TransactionService replayedTransactions =
-            new TransactionService(replayedAccounts, new IdempotencyService(), eventStore);
+            new TransactionService(replayedAccounts, eventStore);
         replayedAccounts.rebuild(eventStore.readAll());
         replayedTransactions.rebuild(eventStore.readAll());
 
@@ -52,7 +52,7 @@ class PersistenceReplayTest {
         EventStore eventStore = new InMemoryEventStore();
         AccountService accountService = new AccountService(eventStore);
         TransactionService transactionService =
-            new TransactionService(accountService, new IdempotencyService(), eventStore);
+            new TransactionService(accountService, eventStore);
 
         Account poor = accountService.createAccount(BACK_OFFICE, new BigDecimal("10.00"));
         Account rich = accountService.createAccount(BACK_OFFICE, new BigDecimal("0.00"));
@@ -71,7 +71,7 @@ class PersistenceReplayTest {
         EventStore eventStore = new InMemoryEventStore();
         AccountService writerAccounts = new AccountService(eventStore);
         TransactionService writerTransactions =
-            new TransactionService(writerAccounts, new IdempotencyService(), eventStore);
+            new TransactionService(writerAccounts, eventStore);
 
         Account a = writerAccounts.createAccount(BACK_OFFICE, new BigDecimal("100.00"));
         Account b = writerAccounts.createAccount(BACK_OFFICE, new BigDecimal("0.00"));
@@ -80,7 +80,7 @@ class PersistenceReplayTest {
 
         AccountService readerAccounts = new AccountService(eventStore);
         TransactionService readerTransactions =
-            new TransactionService(readerAccounts, new IdempotencyService(), eventStore);
+            new TransactionService(readerAccounts, eventStore);
         new JournalReplay(eventStore, List.of(readerAccounts, readerTransactions)).run(null);
 
         assertEquals(0, new BigDecimal("120.00").compareTo(readerAccounts.getAccount(a.getId()).getBalance()));

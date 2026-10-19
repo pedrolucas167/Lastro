@@ -34,8 +34,7 @@ class TransactionServiceTest {
     void setUp() {
         eventStore = new InMemoryEventStore();
         accountService = new AccountService(eventStore);
-        IdempotencyService idempotencyService = new IdempotencyService();
-        transactionService = new TransactionService(accountService, idempotencyService, eventStore);
+        transactionService = new TransactionService(accountService, eventStore);
         
         fromAccount = accountService.createAccount(BACK_OFFICE, new BigDecimal("1000.00"));
         toAccount = accountService.createAccount(BACK_OFFICE, new BigDecimal("500.00"));
