@@ -43,7 +43,7 @@ O Lastro é uma plataforma de trading de mercado de capitais estruturada como um
 - **Order Book**: Book de ofertas com price-time priority
 - **Matching Engine**: Engine de matching de ordens buy/sell
 - **Chave de idempotência**: transferências e ordens guardam a chave do cliente no journal — o reenvio devolve o que já foi aceito sem repetir o efeito, e a garantia sobrevive ao reinício
-- **Event Journal**: Persistência append-only de eventos de domínio, com replay no startup
+- **Event Journal**: Persistência append-only dos fatos de domínio — só o comando que aconteceu — com replay no startup
 - **Actuator**: Health checks e métricas de produção (Prometheus)
 - **OpenAPI**: Documentação automática da API em Swagger UI
 - **Keycloak**: Provedor de identidade que emite os JWTs; a API só os valida (resource server)
@@ -199,7 +199,7 @@ No Swagger UI, use **Authorize** e cole o token.
 
 ### Persistência
 
-Cada mudança de estado — movimento de dinheiro (conta aberta, titular definido, crédito, débito, transferência), atividade do engine (ordens enviadas, canceladas, substituídas e trades executados) e controle de mercado (halt/resume por símbolo) — é registrada como um **evento imutável** em um **journal append-only**. No startup, o estado em memória é reconstruído a partir do journal: as contas e transações são reaplicadas, o engine **reexecuta os comandos na mesma ordem** (restaurando o book com prioridade preço-tempo, as posições e os trades) e os símbolos pausados voltam pausados — os dados sobrevivem a reinícios e o próprio journal serve como trilha de auditoria.
+Cada mudança de estado — movimento de dinheiro (conta aberta, titular definido, crédito, débito, transferência), atividade do engine (ordens enviadas, canceladas, substituídas e trades executados) e controle de mercado (halt/resume por símbolo) — é registrada como um **evento imutável** em um **journal append-only**. No startup, o estado em memória é reconstruído a partir do journal: as contas e transações são reaplicadas, o engine **reexecuta os comandos na mesma ordem** (restaurando o book com prioridade preço-tempo, as posições e os trades) e os símbolos pausados voltam pausados — os dados sobrevivem a reinícios e o próprio journal serve como trilha de auditoria. O journal só grava o comando que **aconteceu**: cancelamento ou amend que o engine recusou não vira evento, e repetir o cancelamento não gera um segundo fato.
 
 Cada evento grava **quem o causou**: o `sub` do token e os papéis que a identidade carregava naquele momento. A autoridade fica no fato, não na configuração de hoje — revogar um papel amanhã não reescreve quem podia o quê ontem. Eventos gravados antes disso (journal anterior a este campo) replayam com o ator vazio; o replay não depende dele.
 
@@ -243,8 +243,8 @@ Todas as rotas abaixo exigem `Authorization: Bearer <token>` com o papel adequad
 
 - `POST /api/trading/orders` - Criar ordem (body: `{"symbol": "PETR4", "side": "BUY", "type": "LIMIT", "price": 30.50, "quantity": 100, "accountId": "acc-1", "timeInForce": "GTC"}`; `timeInForce` opcional: `GTC` (padrão), `IOC`, `FOK`)
   - Cabeçalho opcional `Idempotency-Key`: reenviar a mesma ordem com a mesma chave devolve a ordem que já foi aceita, sem criar outra nem gerar outro trade. A chave fica no journal e volta no replay, então o reenvio continua seguro depois de um reinício; a mesma chave para outra ordem responde `409`.
-- `POST /api/trading/orders/{orderId}/replace?symbol=PETR4` - Substituir preço/quantidade de uma ordem em repouso (body: `{"price": 10.50, "quantity": 200}`; campos opcionais)
-- `POST /api/trading/orders/{orderId}/cancel` - Cancelar ordem
+- `POST /api/trading/orders/{orderId}/replace?symbol=PETR4` - Substituir preço/quantidade de uma ordem em repouso (body: `{"price": 10.50, "quantity": 200}`; campos opcionais). Amend recusado pelo engine (ordem fora de repouso ou quantidade abaixo da já executada) responde `404` **sem** deixar `OrderReplaced` no journal.
+- `POST /api/trading/orders/{orderId}/cancel?symbol=PETR4` - Cancelar ordem em repouso: `200` quando cancela, e também `200` no reenvio de uma ordem já cancelada — o journal já tem o cancelamento, então não entra evento novo. Ordem desconhecida é `404` e ordem preenchida é `409`; nos dois casos, nada é gravado.
 - `GET /api/trading/orderbook/{symbol}` - Obter book de ofertas
 - `GET /api/trading/trades` - Obter todos os trades
 - `GET /api/trading/trades?symbol=XXX` - Obter trades por símbolo

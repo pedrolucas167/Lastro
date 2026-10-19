@@ -6,6 +6,7 @@ import io.github.pedrolucas167.lastro.domain.*;
 import io.github.pedrolucas167.lastro.dto.*;
 import io.github.pedrolucas167.lastro.service.OrderExecutionResult;
 import io.github.pedrolucas167.lastro.service.TradingService;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
@@ -86,12 +87,20 @@ public class TradingController {
         return TimeInForce.valueOf(value.toUpperCase());
     }
 
+    /**
+     * Cancelar de novo e reenvio: responde 200 sem fato novo, porque o journal ja tem o
+     * cancelamento do primeiro. Ordem preenchida nao aceita cancelamento (409) e ordem
+     * desconhecida e 404.
+     */
     @PostMapping("/orders/{orderId}/cancel")
     public ResponseEntity<Void> cancelOrder(Authentication authentication,
                                           @PathVariable String orderId, 
                                           @RequestParam String symbol) {
-        boolean cancelled = tradingService.cancelOrder(Roles.actor(authentication), orderId, symbol);
-        return cancelled ? ResponseEntity.ok().build() : ResponseEntity.notFound().build();
+        return switch (tradingService.cancelOrder(Roles.actor(authentication), orderId, symbol)) {
+            case CANCELLED, ALREADY_CANCELLED -> ResponseEntity.ok().build();
+            case NOT_CANCELLABLE -> ResponseEntity.status(HttpStatus.CONFLICT).build();
+            case UNKNOWN -> ResponseEntity.notFound().build();
+        };
     }
 
     @GetMapping("/orderbook/{symbol}")
