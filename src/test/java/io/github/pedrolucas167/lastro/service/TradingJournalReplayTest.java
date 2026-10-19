@@ -65,7 +65,8 @@ class TradingJournalReplayTest {
         Order cancelled = writer.submitOrder(BACK_OFFICE, "VALE3", OrderSide.BUY, OrderType.LIMIT,
             new BigDecimal("60.00"), 50, "a2", TimeInForce.GTC).order();
 
-        assertTrue(writer.cancelOrder(BACK_OFFICE, cancelled.getId(), "VALE3"));
+        assertEquals(TradingService.CancelOutcome.CANCELLED,
+            writer.cancelOrder(BACK_OFFICE, cancelled.getId(), "VALE3"));
         assertTrue(writer.replaceOrder(BACK_OFFICE, kept.getId(), "VALE3", new BigDecimal("61.00"), null).isPresent());
 
         TradingService replayed = newTradingService(eventStore);

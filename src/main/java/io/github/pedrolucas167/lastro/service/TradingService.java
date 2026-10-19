@@ -118,13 +118,16 @@ public class TradingService implements JournalRebuildable {
             price, quantity, order.getAccountId());
 
         BigDecimal amendedQuantity = new BigDecimal(quantity);
-        eventStore.append(new OrderReplaced(orderId, symbol, price, amendedQuantity, actor, Instant.now()));
 
         Optional<List<Trade>> generatedTrades =
             matchingEngine.replaceOrder(orderId, symbol, price, amendedQuantity);
         if (generatedTrades.isEmpty()) {
+            // O engine recusou (fora de repouso ou amend invalido): nada aconteceu, entao nada
+            // vai para o journal.
             return Optional.empty();
         }
+
+        eventStore.append(new OrderReplaced(orderId, symbol, price, amendedQuantity, actor, Instant.now()));
 
         List<Trade> trades = generatedTrades.get();
         recordTrades(actor, trades);
@@ -144,9 +147,38 @@ public class TradingService implements JournalRebuildable {
         }
     }
 
-    public boolean cancelOrder(Actor actor, String orderId, String symbol) {
-        eventStore.append(new OrderCancelled(orderId, symbol, actor, Instant.now()));
-        return matchingEngine.cancelOrder(orderId, symbol);
+    /**
+     * Cancela a ordem em repouso. O journal so recebe o fato depois de o engine confirmar: um
+     * 404 nao pode deixar OrderCancelled na trilha atribuido a quem chamou.
+     *
+     * Cancelar de novo e reenvio, nao erro: o estado desejado ja esta no lugar, e fato novo nao
+     * ha. Ordem preenchida nao tem cancelamento possivel.
+     */
+    public CancelOutcome cancelOrder(Actor actor, String orderId, String symbol) {
+        Order order = orderService.getOrder(orderId);
+        if (order == null || !order.getSymbol().equals(symbol)) {
+            return CancelOutcome.UNKNOWN;
+        }
+
+        if (matchingEngine.cancelOrder(orderId, symbol)) {
+            eventStore.append(new OrderCancelled(orderId, symbol, actor, Instant.now()));
+            logger.info("Order {} cancelled", orderId);
+            return CancelOutcome.CANCELLED;
+        }
+
+        // O engine recusou: a ordem nao estava em repouso. Se ja estava cancelada, o que o
+        // cliente pediu ja vale; se foi preenchida, nao ha o que cancelar.
+        return order.getStatus() == OrderStatus.CANCELLED
+            ? CancelOutcome.ALREADY_CANCELLED
+            : CancelOutcome.NOT_CANCELLABLE;
+    }
+
+    /** O que o cancelamento fez. Reenvio nao gera fato: o journal ja tinha o do primeiro. */
+    public enum CancelOutcome {
+        CANCELLED,
+        ALREADY_CANCELLED,
+        NOT_CANCELLABLE,
+        UNKNOWN
     }
 
     public OrderBook getOrderBook(String symbol) {
