@@ -8,6 +8,7 @@ import io.github.pedrolucas167.lastro.exception.TransferIdempotencyKeyReusedExce
 import io.github.pedrolucas167.lastro.journal.EventStore;
 import io.github.pedrolucas167.lastro.journal.InMemoryEventStore;
 import io.github.pedrolucas167.lastro.journal.TransferCompleted;
+import io.github.pedrolucas167.lastro.ledger.LedgerService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -40,8 +41,8 @@ class TransferIdempotencyTest {
     @BeforeEach
     void setUp() {
         eventStore = new InMemoryEventStore();
-        accountService = new AccountService(eventStore);
-        transactionService = new TransactionService(accountService, eventStore);
+        accountService = new AccountService(eventStore, new LedgerService());
+        transactionService = new TransactionService(accountService);
         from = accountService.createAccount(BACK_OFFICE, new BigDecimal("1000.00"));
         to = accountService.createAccount(BACK_OFFICE, new BigDecimal("500.00"));
     }
@@ -86,7 +87,7 @@ class TransferIdempotencyTest {
         Transaction accepted = transfer("chave-1");
 
         // Reinicio: transacoes novas reconstruidas do mesmo journal.
-        TransactionService restarted = new TransactionService(accountService, eventStore);
+        TransactionService restarted = new TransactionService(accountService);
         restarted.rebuild(eventStore.readAll());
 
         Transaction resent = restarted.transfer(BACK_OFFICE, from.getId(), to.getId(),

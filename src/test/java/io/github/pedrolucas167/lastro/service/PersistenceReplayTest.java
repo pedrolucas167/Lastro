@@ -7,6 +7,7 @@ import io.github.pedrolucas167.lastro.domain.TransactionStatus;
 import io.github.pedrolucas167.lastro.journal.EventStore;
 import io.github.pedrolucas167.lastro.journal.InMemoryEventStore;
 import io.github.pedrolucas167.lastro.journal.JournalReplay;
+import io.github.pedrolucas167.lastro.ledger.LedgerService;
 import org.junit.jupiter.api.Test;
 
 import java.math.BigDecimal;
@@ -21,9 +22,9 @@ class PersistenceReplayTest {
     @Test
     void rebuildsAccountsAndTransactionsFromJournal() {
         EventStore eventStore = new InMemoryEventStore();
-        AccountService accountService = new AccountService(eventStore);
+        AccountService accountService = new AccountService(eventStore, new LedgerService());
         TransactionService transactionService =
-            new TransactionService(accountService, eventStore);
+            new TransactionService(accountService);
 
         Account from = accountService.createAccount(BACK_OFFICE, new BigDecimal("1000.00"));
         Account to = accountService.createAccount(BACK_OFFICE, new BigDecimal("500.00"));
@@ -32,9 +33,9 @@ class PersistenceReplayTest {
         Transaction transfer = transactionService.transfer(BACK_OFFICE, from.getId(), to.getId(), new BigDecimal("200.00"));
 
         // Simula um reinicio: servicos novos, mesmo journal.
-        AccountService replayedAccounts = new AccountService(eventStore);
+        AccountService replayedAccounts = new AccountService(eventStore, new LedgerService());
         TransactionService replayedTransactions =
-            new TransactionService(replayedAccounts, eventStore);
+            new TransactionService(replayedAccounts);
         replayedAccounts.rebuild(eventStore.readAll());
         replayedTransactions.rebuild(eventStore.readAll());
 
@@ -50,9 +51,9 @@ class PersistenceReplayTest {
     @Test
     void failedTransferIsNotJournaled() {
         EventStore eventStore = new InMemoryEventStore();
-        AccountService accountService = new AccountService(eventStore);
+        AccountService accountService = new AccountService(eventStore, new LedgerService());
         TransactionService transactionService =
-            new TransactionService(accountService, eventStore);
+            new TransactionService(accountService);
 
         Account poor = accountService.createAccount(BACK_OFFICE, new BigDecimal("10.00"));
         Account rich = accountService.createAccount(BACK_OFFICE, new BigDecimal("0.00"));
@@ -61,7 +62,7 @@ class PersistenceReplayTest {
 
         assertEquals(TransactionStatus.FAILED, transfer.getStatus());
 
-        AccountService replayed = new AccountService(eventStore);
+        AccountService replayed = new AccountService(eventStore, new LedgerService());
         replayed.rebuild(eventStore.readAll());
         assertEquals(0, new BigDecimal("10.00").compareTo(replayed.getAccount(poor.getId()).getBalance()));
     }
@@ -69,18 +70,18 @@ class PersistenceReplayTest {
     @Test
     void replayRunnerRebuildsStateFromJournal() {
         EventStore eventStore = new InMemoryEventStore();
-        AccountService writerAccounts = new AccountService(eventStore);
+        AccountService writerAccounts = new AccountService(eventStore, new LedgerService());
         TransactionService writerTransactions =
-            new TransactionService(writerAccounts, eventStore);
+            new TransactionService(writerAccounts);
 
         Account a = writerAccounts.createAccount(BACK_OFFICE, new BigDecimal("100.00"));
         Account b = writerAccounts.createAccount(BACK_OFFICE, new BigDecimal("0.00"));
         writerAccounts.credit(BACK_OFFICE, a.getId(), new BigDecimal("50.00"));
         Transaction transfer = writerTransactions.transfer(BACK_OFFICE, a.getId(), b.getId(), new BigDecimal("30.00"));
 
-        AccountService readerAccounts = new AccountService(eventStore);
+        AccountService readerAccounts = new AccountService(eventStore, new LedgerService());
         TransactionService readerTransactions =
-            new TransactionService(readerAccounts, eventStore);
+            new TransactionService(readerAccounts);
         new JournalReplay(eventStore, List.of(readerAccounts, readerTransactions)).run(null);
 
         assertEquals(0, new BigDecimal("120.00").compareTo(readerAccounts.getAccount(a.getId()).getBalance()));
@@ -91,11 +92,11 @@ class PersistenceReplayTest {
     @Test
     void replaysAccountHolder() {
         EventStore eventStore = new InMemoryEventStore();
-        AccountService writer = new AccountService(eventStore);
+        AccountService writer = new AccountService(eventStore, new LedgerService());
         Account held = writer.createAccount(BACK_OFFICE, new BigDecimal("100.00"), "cliente-1");
         Account unassigned = writer.createAccount(BACK_OFFICE, new BigDecimal("100.00"));
 
-        AccountService replayed = new AccountService(eventStore);
+        AccountService replayed = new AccountService(eventStore, new LedgerService());
         replayed.rebuild(eventStore.readAll());
 
         assertEquals("cliente-1", replayed.getAccount(held.getId()).getHolder());
