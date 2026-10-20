@@ -21,6 +21,7 @@ Quinta versão pública: lastro, liquidação e custódia. Nenhuma ordem chega a
 
 ### Corrigido
 
+- **Replay de journal antigo com conta que nunca existiu.** A API aceitava qualquer `accountId` até a 0.4.0, então o journal pode ter ordem ou trade de uma conta que nunca foi aberta — e o `AccountNotFoundException` do replay derrubava o startup. O replay pula esses eventos com `WARN`: nada de conta ou caixa inventado, e a aplicação sobe.
 - Ordem a mercado podia repousar no book e derrubar a execução seguinte com `500`: a ordem ficava no book sem preço, e o motor tentava comparar preço com `null`. Agora só ordem limitada GTC descansa — o que não executa de uma ordem a mercado é cancelado.
 - As validações de saldo e posição do serviço regulatório (`validateSufficientBalance`/`validateSufficientPosition`) eram código morto: nunca eram chamadas. Foram removidas e substituídas pelo pré-trade de verdade.
 
