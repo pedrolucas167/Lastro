@@ -17,6 +17,7 @@ import io.github.pedrolucas167.lastro.journal.MoneyEvent;
 import io.github.pedrolucas167.lastro.journal.TradeExecuted;
 import io.github.pedrolucas167.lastro.journal.TransferCompleted;
 import io.github.pedrolucas167.lastro.ledger.ChartOfAccounts;
+import io.github.pedrolucas167.lastro.ledger.LedgerLine;
 import io.github.pedrolucas167.lastro.ledger.LedgerReason;
 import io.github.pedrolucas167.lastro.ledger.LedgerService;
 import io.github.pedrolucas167.lastro.ledger.LedgerSide;
@@ -123,6 +124,15 @@ public class AccountService implements JournalRebuildable {
             .filter(account -> account.heldBy(holder))
             .sorted(Comparator.comparing(Account::getId))
             .toList();
+    }
+
+    /**
+     * O extrato do caixa: cada partida que tocou a conta, com a contraparte e o saldo depois dela.
+     * Sai do livro, nao de uma lista paralela -- por isso o que o extrato mostra e o que o saldo e.
+     */
+    public List<LedgerLine> statementOf(Actor actor, String accountId) {
+        getAccountFor(actor, accountId);
+        return ledger.statementOf(accountId);
     }
 
     public Account credit(Actor actor, String accountId, BigDecimal amount) {

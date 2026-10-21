@@ -12,6 +12,8 @@ O formato segue [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/) e o 
 
 - **Livro-razão de partidas dobradas.** Todo movimento de dinheiro passa a ter contrapartida: o depósito entra pela liquidante (`ASSETS:SETTLEMENT`) e credita o passivo do cliente (`LIABILITIES:CLIENT:<id>`); transferência e trade movem entre clientes sem tocar o caixa da corretora. O livro é derivado do journal — o mesmo fato, o mesmo mapeamento —, então o replay reconstrói extrato e balanço junto com as contas, e a subida confere os dois: cada conta vale exatamente o que o seu código no plano diz, e a soma dos saldos dos clientes é o caixa na liquidante. Transação desbalanceada não existe por construção: o construtor recusa.
 
+- **Extrato e balanço pela API.** `GET /api/accounts/{id}/statement` devolve as partidas que tocaram a conta — motivo, lado, valor, contraparte e o saldo depois de cada uma —, para o titular da conta ou para o operador; `GET /api/ledger/trial-balance` devolve o livro inteiro, ato de operador: se fecha, os dois totais, o que a corretora deve aos clientes e o caixa na liquidante, conta a conta. Entre clientes, a contraparte do extrato vem sem o id — o extrato de um não revela a conta do outro.
+
 ### Alterado
 
 - **Transferência passa pelo mesmo caminho do resto.** `TransactionService` não mexe mais no saldo direto: quem move dinheiro é o `AccountService`, que grava o fato no journal e lança as partidas — como já acontecia com crédito, débito e trade.

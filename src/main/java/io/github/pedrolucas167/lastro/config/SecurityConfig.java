@@ -52,6 +52,9 @@ public class SecurityConfig {
                 // o servico -- o back office enxerga qualquer conta.
                 .requestMatchers(HttpMethod.GET, "/api/accounts/*", "/api/transactions/*")
                     .hasAnyRole(Actor.HOLDER, Actor.OPERATOR)
+                // O extrato e do titular; o balanco do livro inteiro, do operador (cai no anyRequest).
+                .requestMatchers(HttpMethod.GET, "/api/accounts/*/statement")
+                    .hasAnyRole(Actor.HOLDER, Actor.OPERATOR)
                 .requestMatchers(HttpMethod.POST, "/api/accounts/*/holder")
                     .hasRole(Actor.OPERATOR)
                 .requestMatchers("/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html")

@@ -81,6 +81,7 @@ deploy/keycloak/      # Realm de desenvolvimento (papéis, clientes e usuário d
 - **Pré-trade**: a compra exige caixa disponível (saldo menos o que já está bloqueado por ordens em aberto) e a venda exige a ação na posição — não há posição descoberta
 - **Liquidação**: o trade move o caixa no ato (D+0) — o comprador paga e o vendedor recebe, sem evento de caixa próprio
 - **Custódia**: depósito e transferência de ações entre contas, com o custo médio acompanhando a ação; é por onde a ação entra no sistema
+- **Contabilidade**: livro-razão de partidas dobradas derivado do journal — todo movimento de dinheiro tem contrapartida, e o saldo do cliente é a projeção do código dele no plano de contas
 - **Trades**: Execuções com preço e quantidade
 - **Posições**: Tracking de posições e PnL por conta/símbolo
 - **Regulação**: Validações de pré-negociação (janela de negociação, bandas de preço, limites de quantidade/preço/valor e formato do símbolo)
@@ -97,6 +98,31 @@ Nenhuma ordem chega ao engine sem lastro, e o lastro é o que a ordem **ainda po
 - **Não executou, voltou**: cancelar (ou não repousar, no caso de ordem a mercado) devolve o lastro do que sobrou. O bloqueio **não** é evento do journal — é consequência das ordens em aberto, como a posição, e o replay o reconstrói somando as ordens ainda abertas.
 
 A ação entra no sistema pela custódia (`POST /api/trading/positions/deposit`): o operador registra a carteira que o cliente traz de fora, no custo médio informado. Dali em diante ela se move entre contas por transferência e por trade — sem isso, uma conta nova não teria o que vender.
+
+### Contabilidade (partidas dobradas)
+
+O caixa deixa de ser um número por conta: é um livro-razão de partidas dobradas, e o saldo do cliente é a projeção do código dele no plano de contas. Todo movimento tem contrapartida.
+
+| Código | Natureza | Papel |
+|---|---|---|
+| `ASSETS:SETTLEMENT` | ativo | o caixa da corretora na liquidante |
+| `LIABILITIES:CLIENT:<accountId>` | passivo | o caixa do cliente — o que a corretora deve a ele |
+
+| Fato | Débito | Crédito |
+|---|---|---|
+| abertura com saldo, crédito | `ASSETS:SETTLEMENT` | `LIABILITIES:CLIENT:<id>` |
+| débito | `LIABILITIES:CLIENT:<id>` | `ASSETS:SETTLEMENT` |
+| transferência | `LIABILITIES:CLIENT:<origem>` | `LIABILITIES:CLIENT:<destino>` |
+| trade | `LIABILITIES:CLIENT:<comprador>` | `LIABILITIES:CLIENT:<vendedor>` |
+
+O livro é **derivado do journal**, como o bloqueio deriva das ordens em aberto: o journal guarda o fato, o livro guarda a contabilidade dele, e o mapeamento mora em um lugar só. Não há evento novo nem migração — o journal de qualquer versão anterior ganha partidas dobradas no replay.
+
+Duas provas que o sistema cobra o tempo todo:
+
+- **Toda transação fecha**: débitos = créditos, e o construtor de `LedgerTransaction` recusa o contrário.
+- **A soma dos saldos dos clientes é exatamente o caixa na liquidante**: ninguém inventa dinheiro, e transferência ou trade não criam nem destroem caixa — só mudam de quem é.
+
+Na subida, o replay reconstrói contas e livro e confere conta a conta: uma divergência aborta o startup em vez de deixar o processo servir saldo errado. O extrato (`GET /api/accounts/{id}/statement`) sai do livro — entre clientes, a contraparte vem sem o id, para o extrato de um não revelar a conta do outro —, e o balanço do livro (`GET /api/ledger/trial-balance`) é ato de operador.
 
 ### Concorrência
 
@@ -279,6 +305,11 @@ Todas as rotas abaixo exigem `Authorization: Bearer <token>` com o papel adequad
 - `POST /api/accounts/{id}/holder` - Definir o titular de uma conta sem titular (body: `{"holder": "<sub>"}`, ato de operador)
 - `POST /api/accounts/{id}/credit` - Creditar valor (body: `{"amount": 100.00}`)
 - `POST /api/accounts/{id}/debit` - Debitar valor (body: `{"amount": 100.00}`; só o disponível, sem tocar no que está prometido a uma ordem)
+- `GET /api/accounts/{id}/statement` - Extrato do caixa: cada partida que tocou a conta (motivo, lado, valor, contraparte e o saldo depois dela), do fato mais antigo para o mais novo. O titular vê a própria conta; o operador vê qualquer uma.
+
+### Livro-razão
+
+- `GET /api/ledger/trial-balance` - Balanço do livro, ato de operador: `balanced`, os dois totais (débito e crédito), o que a corretora deve aos clientes e o caixa na liquidante, conta a conta.
 
 ### Transações
 

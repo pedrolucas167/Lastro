@@ -8,6 +8,7 @@ import io.github.pedrolucas167.lastro.dto.AccountResponse;
 import io.github.pedrolucas167.lastro.dto.AmountRequest;
 import io.github.pedrolucas167.lastro.dto.AssignHolderRequest;
 import io.github.pedrolucas167.lastro.dto.CreateAccountRequest;
+import io.github.pedrolucas167.lastro.dto.StatementResponse;
 import io.github.pedrolucas167.lastro.exception.AccountAccessDeniedException;
 import io.github.pedrolucas167.lastro.service.AccountService;
 import org.springframework.http.ResponseEntity;
@@ -48,6 +49,16 @@ public class AccountController {
                                                      @PathVariable String accountId) {
         Account account = accountService.getAccountFor(Roles.actor(authentication), accountId);
         return ResponseEntity.ok(AccountResponse.of(account));
+    }
+
+    /** O extrato do caixa da conta: as partidas que a tocaram, da mais antiga para a mais nova. */
+    @GetMapping("/{accountId}/statement")
+    public ResponseEntity<StatementResponse> statement(Authentication authentication,
+                                                       @PathVariable String accountId) {
+        Actor actor = Roles.actor(authentication);
+        Account account = accountService.getAccountFor(actor, accountId);
+        return ResponseEntity.ok(StatementResponse.of(account,
+            accountService.statementOf(actor, accountId)));
     }
 
     /** Da titular a uma conta que ainda nao tem. Ato de operador. */
