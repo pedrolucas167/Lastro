@@ -8,6 +8,14 @@ O formato segue [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/) e o 
 
 ## [Unreleased]
 
+### Adicionado
+
+- **Livro-razão de partidas dobradas.** Todo movimento de dinheiro passa a ter contrapartida: o depósito entra pela liquidante (`ASSETS:SETTLEMENT`) e credita o passivo do cliente (`LIABILITIES:CLIENT:<id>`); transferência e trade movem entre clientes sem tocar o caixa da corretora. O livro é derivado do journal — o mesmo fato, o mesmo mapeamento —, então o replay reconstrói extrato e balanço junto com as contas, e a subida confere os dois: cada conta vale exatamente o que o seu código no plano diz, e a soma dos saldos dos clientes é o caixa na liquidante. Transação desbalanceada não existe por construção: o construtor recusa.
+
+### Alterado
+
+- **Transferência passa pelo mesmo caminho do resto.** `TransactionService` não mexe mais no saldo direto: quem move dinheiro é o `AccountService`, que grava o fato no journal e lança as partidas — como já acontecia com crédito, débito e trade.
+
 ## [0.5.0] - 2026-10-19
 
 Quinta versão pública: lastro, liquidação e custódia. Nenhuma ordem chega ao engine sem lastro — a compra bloqueia o caixa que ainda pode gastar (saldo menos o que já está prometido a ordens em aberto) e a venda bloqueia a ação —, e o trade liquida no ato: o comprador paga e o vendedor recebe no mesmo instante, com o `TradeExecuted` carregando tudo o que a liquidação precisa. A ação passa a entrar no sistema pela custódia (depósito e transferência), sem a qual uma conta nova não teria o que vender; ordem a mercado deixou de repousar (o que não executa é cancelado, fechando o `500` da execução seguinte, e a compra a mercado é limitada pelo teto da banda); e o journal deixa de aceitar ordem sem dinheiro ou sem ação por trás.

@@ -7,6 +7,7 @@ import io.github.pedrolucas167.lastro.exception.AccountAlreadyHasHolderException
 import io.github.pedrolucas167.lastro.exception.AccountNotFoundException;
 import io.github.pedrolucas167.lastro.exception.InsufficientFundsException;
 import io.github.pedrolucas167.lastro.journal.InMemoryEventStore;
+import io.github.pedrolucas167.lastro.ledger.LedgerService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.DisplayName;
@@ -24,7 +25,7 @@ class AccountServiceTest {
 
     @BeforeEach
     void setUp() {
-        accountService = new AccountService(new InMemoryEventStore());
+        accountService = new AccountService(new InMemoryEventStore(), new LedgerService());
     }
 
     @Test

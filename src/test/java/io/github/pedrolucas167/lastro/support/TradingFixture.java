@@ -5,6 +5,7 @@ import io.github.pedrolucas167.lastro.domain.Actor;
 import io.github.pedrolucas167.lastro.domain.MatchingEngine;
 import io.github.pedrolucas167.lastro.journal.EventStore;
 import io.github.pedrolucas167.lastro.journal.JournalReplay;
+import io.github.pedrolucas167.lastro.ledger.LedgerService;
 import io.github.pedrolucas167.lastro.metrics.MetricsCollector;
 import io.github.pedrolucas167.lastro.service.AccountService;
 import io.github.pedrolucas167.lastro.service.CustodyService;
@@ -33,6 +34,7 @@ public final class TradingFixture {
     public final MatchingEngine engine = new MatchingEngine();
     public final MetricsCollector metrics = new MetricsCollector();
     public final PositionService positions = new PositionService();
+    public final LedgerService ledger = new LedgerService();
     public final OrderService orders;
     public final AccountService accounts;
     public final RegulatoryValidationService validation;
@@ -48,7 +50,7 @@ public final class TradingFixture {
         this.eventStore = eventStore;
         this.priceBand = priceBand;
         this.orders = new OrderService(eventStore);
-        this.accounts = new AccountService(eventStore);
+        this.accounts = new AccountService(eventStore, ledger);
         this.validation = new RegulatoryValidationService(new MarketHaltService(eventStore), priceBand,
             false, true, "00:00", "23:59");
         this.risk = new PreTradeRiskService(accounts, positions, priceBand);

@@ -1,6 +1,5 @@
 package io.github.pedrolucas167.lastro.service;
 
-import io.github.pedrolucas167.lastro.domain.Account;
 import io.github.pedrolucas167.lastro.domain.Actor;
 import io.github.pedrolucas167.lastro.domain.Transaction;
 import io.github.pedrolucas167.lastro.domain.TransactionStatus;
@@ -9,7 +8,6 @@ import io.github.pedrolucas167.lastro.exception.AccountAccessDeniedException;
 import io.github.pedrolucas167.lastro.exception.TransactionFailedException;
 import io.github.pedrolucas167.lastro.exception.TransferIdempotencyKeyReusedException;
 import io.github.pedrolucas167.lastro.journal.DomainEvent;
-import io.github.pedrolucas167.lastro.journal.EventStore;
 import io.github.pedrolucas167.lastro.journal.JournalRebuildable;
 import io.github.pedrolucas167.lastro.journal.TransferCompleted;
 import org.slf4j.Logger;
@@ -27,13 +25,11 @@ import java.util.concurrent.ConcurrentHashMap;
 public class TransactionService implements JournalRebuildable {
     private static final Logger logger = LoggerFactory.getLogger(TransactionService.class);
     private final AccountService accountService;
-    private final EventStore eventStore;
     private final Map<String, Transaction> transactions = new ConcurrentHashMap<>();
     private final Map<String, Transaction> transactionsByIdempotencyKey = new ConcurrentHashMap<>();
 
-    public TransactionService(AccountService accountService, EventStore eventStore) {
+    public TransactionService(AccountService accountService) {
         this.accountService = accountService;
-        this.eventStore = eventStore;
     }
 
     public Transaction transfer(Actor actor, String fromAccountId, String toAccountId, BigDecimal amount) {
@@ -79,14 +75,10 @@ public class TransactionService implements JournalRebuildable {
             transactionId, fromAccountId, toAccountId, amount);
 
         try {
-            // So sai dinheiro de conta que o ator tem; o destino e escolha de quem paga.
-            Account fromAccount = accountService.getAccountFor(actor, fromAccountId);
-            Account toAccount = accountService.getAccount(toAccountId);
-
-            if (fromAccount.tryDebit(amount)) {
-                toAccount.credit(amount);
-                journalTransfer(transactionId, fromAccountId, toAccountId, amount, idempotencyKey, actor,
-                    fromAccount, toAccount);
+            // O dinheiro sai pelo mesmo caminho de todo movimento: a conta, o journal e o livro.
+            boolean moved = accountService.transfer(new TransferCompleted(transactionId, fromAccountId,
+                toAccountId, amount, idempotencyKey, actor, Instant.now()));
+            if (moved) {
                 transaction.setStatus(TransactionStatus.COMPLETED);
                 logger.info("Transfer {} completed successfully", transactionId);
             } else {
@@ -104,20 +96,6 @@ public class TransactionService implements JournalRebuildable {
 
         transactions.put(transactionId, transaction);
         return transaction;
-    }
-
-    private void journalTransfer(String transactionId, String fromAccountId, String toAccountId,
-                                 BigDecimal amount, String idempotencyKey, Actor actor, Account fromAccount,
-                                 Account toAccount) {
-        try {
-            eventStore.append(new TransferCompleted(
-                transactionId, fromAccountId, toAccountId, amount, idempotencyKey, actor, Instant.now()));
-        } catch (RuntimeException e) {
-            // A transferencia ja foi aplicada em memoria; desfaz para nao divergir do journal.
-            toAccount.debit(amount);
-            fromAccount.credit(amount);
-            throw e;
-        }
     }
 
     /** Reconstroi as transacoes a partir do journal. A chave de idempotencia volta com elas. */

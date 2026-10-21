@@ -178,12 +178,12 @@ public class TradingService implements JournalRebuildable {
     /** O trade e causado pela ordem que chegou: o ator que a enviou e o ator do fato. */
     private void recordTrades(Actor actor, List<Trade> trades) {
         for (Trade trade : trades) {
-            eventStore.append(new TradeExecuted(trade.getId(), trade.getSymbol(),
+            TradeExecuted fact = new TradeExecuted(trade.getId(), trade.getSymbol(),
                 trade.getBuyOrderId(), trade.getSellOrderId(), trade.getPrice(), trade.getQuantity(),
-                trade.getBuyAccountId(), trade.getSellAccountId(), actor, trade.getTimestamp()));
+                trade.getBuyAccountId(), trade.getSellAccountId(), actor, trade.getTimestamp());
+            eventStore.append(fact);
             // O trade e o fato e o caixa e consequencia: o comprador paga, o vendedor recebe.
-            accountService.settleTrade(trade.getBuyAccountId(), trade.getSellAccountId(),
-                trade.getPrice(), trade.getQuantity());
+            accountService.settleTrade(fact);
             // O que executou deixou de ser bloqueio, nos dois lados da ponta.
             riskService.releaseFilled(orderService.getOrder(trade.getBuyOrderId()),
                 trade.getQuantity());

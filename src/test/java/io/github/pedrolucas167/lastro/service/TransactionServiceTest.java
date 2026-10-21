@@ -10,6 +10,7 @@ import io.github.pedrolucas167.lastro.exception.TransactionFailedException;
 import io.github.pedrolucas167.lastro.journal.EventStore;
 import io.github.pedrolucas167.lastro.journal.InMemoryEventStore;
 import io.github.pedrolucas167.lastro.journal.TransferCompleted;
+import io.github.pedrolucas167.lastro.ledger.LedgerService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.DisplayName;
@@ -33,8 +34,8 @@ class TransactionServiceTest {
     @BeforeEach
     void setUp() {
         eventStore = new InMemoryEventStore();
-        accountService = new AccountService(eventStore);
-        transactionService = new TransactionService(accountService, eventStore);
+        accountService = new AccountService(eventStore, new LedgerService());
+        transactionService = new TransactionService(accountService);
         
         fromAccount = accountService.createAccount(BACK_OFFICE, new BigDecimal("1000.00"));
         toAccount = accountService.createAccount(BACK_OFFICE, new BigDecimal("500.00"));
