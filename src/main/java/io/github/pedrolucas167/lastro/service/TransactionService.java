@@ -5,6 +5,7 @@ import io.github.pedrolucas167.lastro.domain.Transaction;
 import io.github.pedrolucas167.lastro.domain.TransactionStatus;
 import io.github.pedrolucas167.lastro.domain.TransactionType;
 import io.github.pedrolucas167.lastro.exception.AccountAccessDeniedException;
+import io.github.pedrolucas167.lastro.exception.ClientLimitExceededException;
 import io.github.pedrolucas167.lastro.exception.ClientSuspendedException;
 import io.github.pedrolucas167.lastro.exception.TransactionFailedException;
 import io.github.pedrolucas167.lastro.exception.TransferIdempotencyKeyReusedException;
@@ -17,6 +18,7 @@ import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -78,8 +80,12 @@ public class TransactionService implements JournalRebuildable {
             transactionId, fromAccountId, toAccountId, amount);
 
         try {
-            // Cliente suspenso nao tira dinheiro da conta; o que entra, entra.
-            clientService.ensureMayOperate(accountService.getAccount(fromAccountId).getHolder());
+            // Cliente suspenso nao tira dinheiro da conta, e o limite diario soma o que ja saiu
+            // hoje: as duas recusas acontecem antes de o dinheiro se mover.
+            String holder = accountService.getAccount(fromAccountId).getHolder();
+            clientService.ensureMayOperate(holder);
+            clientService.ensureTransferWithinDailyLimit(holder,
+                accountService.transferredOutOn(holder, LocalDate.now()), amount);
             // O dinheiro sai pelo mesmo caminho de todo movimento: a conta, o journal e o livro.
             boolean moved = accountService.transfer(new TransferCompleted(transactionId, fromAccountId,
                 toAccountId, amount, idempotencyKey, actor, Instant.now()));
@@ -90,8 +96,9 @@ public class TransactionService implements JournalRebuildable {
                 transaction.setStatus(TransactionStatus.FAILED);
                 logger.warn("Transfer {} failed: insufficient funds", transactionId);
             }
-        } catch (AccountAccessDeniedException | ClientSuspendedException e) {
-            // Autorizacao nao e falha da transferencia: negar acesso e 403, nao 400.
+        } catch (AccountAccessDeniedException | ClientSuspendedException
+                 | ClientLimitExceededException e) {
+            // Recusa de acesso ou de limite nao e falha da transferencia: e 403, nao 400.
             throw e;
         } catch (Exception e) {
             transaction.setStatus(TransactionStatus.FAILED);

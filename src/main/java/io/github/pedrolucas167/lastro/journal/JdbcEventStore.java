@@ -26,7 +26,8 @@ public class JdbcEventStore implements EventStore {
         Map.entry("SymbolResumed", SymbolResumed.class),
         Map.entry("ClientRegistered", ClientRegistered.class),
         Map.entry("ClientSuspended", ClientSuspended.class),
-        Map.entry("ClientReactivated", ClientReactivated.class)
+        Map.entry("ClientReactivated", ClientReactivated.class),
+        Map.entry("ClientLimitsSet", ClientLimitsSet.class)
     );
 
     private final JdbcTemplate jdbcTemplate;

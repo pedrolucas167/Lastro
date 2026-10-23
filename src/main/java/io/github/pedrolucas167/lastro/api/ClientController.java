@@ -2,6 +2,8 @@ package io.github.pedrolucas167.lastro.api;
 
 import io.github.pedrolucas167.lastro.config.Roles;
 import io.github.pedrolucas167.lastro.domain.Client;
+import io.github.pedrolucas167.lastro.domain.ClientLimits;
+import io.github.pedrolucas167.lastro.dto.ClientLimitsRequest;
 import io.github.pedrolucas167.lastro.dto.ClientResponse;
 import io.github.pedrolucas167.lastro.dto.RegisterClientRequest;
 import io.github.pedrolucas167.lastro.dto.SuspendClientRequest;
@@ -65,5 +67,15 @@ public class ClientController {
                                                      @PathVariable String clientId) {
         return ResponseEntity.ok(ClientResponse.of(
             clientService.reactivate(Roles.actor(authentication), clientId)));
+    }
+
+    /** Define os limites do cliente: campo ausente ou nulo remove aquele limite. Ato de operador. */
+    @PutMapping("/{clientId}/limits")
+    public ResponseEntity<ClientResponse> setLimits(Authentication authentication,
+                                                    @PathVariable String clientId,
+                                                    @RequestBody ClientLimitsRequest request) {
+        Client client = clientService.setLimits(Roles.actor(authentication), clientId,
+            new ClientLimits(request.orderNotional(), request.dailyTransfer()));
+        return ResponseEntity.ok(ClientResponse.of(client));
     }
 }

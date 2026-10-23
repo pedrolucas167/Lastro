@@ -1,10 +1,13 @@
 package io.github.pedrolucas167.lastro.service;
 
+import io.github.pedrolucas167.lastro.domain.Client;
+import io.github.pedrolucas167.lastro.domain.ClientLimits;
 import io.github.pedrolucas167.lastro.domain.Order;
 import io.github.pedrolucas167.lastro.domain.OrderSide;
 import io.github.pedrolucas167.lastro.domain.OrderStatus;
 import io.github.pedrolucas167.lastro.domain.OrderType;
 import io.github.pedrolucas167.lastro.domain.TimeInForce;
+import io.github.pedrolucas167.lastro.exception.ClientLimitExceededException;
 import io.github.pedrolucas167.lastro.exception.RegulatoryException;
 import io.github.pedrolucas167.lastro.journal.InMemoryEventStore;
 import io.github.pedrolucas167.lastro.journal.OrderSubmitted;
@@ -192,6 +195,35 @@ class PreTradeRiskTest {
         assertTrue(fixture.trading.replaceOrder(TradingFixture.BACK_OFFICE, order.getId(), SYMBOL,
             new BigDecimal("30.00"), 5).isPresent());
         assertEquals(0, new BigDecimal("850.00").compareTo(fixture.accounts.getAvailable(account)));
+    }
+
+    @Test
+    @DisplayName("O teto por ordem barra a compra acima dele e nao alcanca a venda")
+    void orderLimitRefusesTheBuyAboveTheCeiling() {
+        TradingFixture fixture = fixture();
+        String subject = "cliente-limite";
+        Client client = fixture.clients.register(TradingFixture.BACK_OFFICE, subject, "Maria");
+        fixture.clients.setLimits(TradingFixture.BACK_OFFICE, client.getId(),
+            new ClientLimits(new BigDecimal("500.00"), null));
+        String buyer = fixture.accounts.createAccount(TradingFixture.BACK_OFFICE,
+            new BigDecimal("1000.00"), subject).getId();
+
+        // 30 x 20 = 600 acima do teto: nao vira fato e nao bloqueia caixa.
+        assertThrows(ClientLimitExceededException.class,
+            () -> buy(fixture, buyer, "30.00", 20, TimeInForce.GTC));
+        assertEquals(0, journaled(fixture));
+        assertEquals(0, new BigDecimal("1000.00").compareTo(fixture.accounts.getAvailable(buyer)));
+
+        // 30 x 10 = 300 cabe no teto.
+        assertTrue(buy(fixture, buyer, "30.00", 10, TimeInForce.GTC).isOpen());
+
+        // Venda nao compromete caixa: 100 x 30 = 3000 passa pelo mesmo teto de 500.
+        String seller = fixture.accounts.createAccount(TradingFixture.BACK_OFFICE,
+            new BigDecimal("0.00"), subject).getId();
+        fixture.custody.deposit(TradingFixture.BACK_OFFICE, seller, SYMBOL, 100,
+            new BigDecimal("30.00"));
+
+        assertTrue(sell(fixture, seller, "30.00", 100, TimeInForce.GTC).isOpen());
     }
 
     @Test

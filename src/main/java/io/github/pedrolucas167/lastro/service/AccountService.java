@@ -30,6 +30,8 @@ import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.time.LocalDate;
+import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
@@ -133,6 +135,22 @@ public class AccountService implements JournalRebuildable {
     public List<LedgerLine> statementOf(Actor actor, String accountId) {
         getAccountFor(actor, accountId);
         return ledger.statementOf(accountId);
+    }
+
+    /**
+     * O que o titular ja tirou por transferencia no dia, somando as contas que ele tem. Sai do
+     * livro -- e o mesmo dinheiro que o extrato mostra --, e o dia e o do sistema, o mesmo da
+     * janela de negociacao.
+     */
+    public BigDecimal transferredOutOn(String holder, LocalDate day) {
+        ZoneId zone = ZoneId.systemDefault();
+        return accountsOf(holder).stream()
+            .flatMap(account -> ledger.statementOf(account.getId()).stream())
+            .filter(line -> line.reason() == LedgerReason.TRANSFER)
+            .filter(line -> line.side() == LedgerSide.DEBIT)
+            .filter(line -> line.occurredAt().atZone(zone).toLocalDate().equals(day))
+            .map(LedgerLine::amount)
+            .reduce(BigDecimal.ZERO, BigDecimal::add);
     }
 
     public Account credit(Actor actor, String accountId, BigDecimal amount) {

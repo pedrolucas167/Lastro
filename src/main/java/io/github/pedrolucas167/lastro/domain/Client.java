@@ -17,6 +17,7 @@ public class Client {
     private volatile ClientStatus status = ClientStatus.ACTIVE;
     /** Por que o operador suspendeu: o cliente le na consulta e o suporte sabe o que responder. */
     private volatile String suspensionReason;
+    private volatile ClientLimits limits = ClientLimits.NONE;
 
     public Client(String id, String subject, String name, Instant registeredAt) {
         this.id = id;
@@ -47,6 +48,14 @@ public class Client {
 
     public String getSuspensionReason() {
         return suspensionReason;
+    }
+
+    public ClientLimits getLimits() {
+        return limits;
+    }
+
+    public void setLimits(ClientLimits limits) {
+        this.limits = limits;
     }
 
     public boolean active() {

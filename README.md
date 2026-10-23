@@ -5,7 +5,7 @@
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](./LICENSE)
 [![Java](https://img.shields.io/badge/Java-25-orange.svg)](https://openjdk.org/projects/jdk/25/)
 
-> **Status: experimental (v0.x).** O núcleo de matching é correto sob concorrência e durável via journal + replay. A API exige autenticação (JWT do Keycloak), autoriza por papel na rota e por titular na conta — o titular só alcança as contas que tem, enquanto operador e M2M são o balcão e movimentam qualquer conta — e cada evento do journal grava quem o causou. Isto **não é production-ready**: não há limites por titular nem conectividade de mercado (feed/FIX); a liquidação é D+0 e no próprio livro, sem câmara, netting ou D+n. Use por sua conta e risco.
+> **Status: experimental (v0.x).** O núcleo de matching é correto sob concorrência e durável via journal + replay. A API exige autenticação (JWT do Keycloak), autoriza por papel na rota e por titular na conta — o titular só alcança as contas que tem, enquanto operador e M2M são o balcão e movimentam qualquer conta — e cada evento do journal grava quem o causou. Isto **não é production-ready**: não há verificação de identidade (KYC/PLD) nem conectividade de mercado (feed/FIX); a liquidação é D+0 e no próprio livro, sem câmara, netting ou D+n. Use por sua conta e risco.
 
 Plataforma de trading de mercado de capitais para testar concorrência e escalabilidade em matching engines, construída com rigor de nível institucional.
 
@@ -186,7 +186,7 @@ O realm de desenvolvimento (`lastro`, em `deploy/keycloak/lastro-realm.json`) tr
 | `GET /api/accounts/mine` (as contas do próprio token) | – | ✓ | ✓ |
 | `GET /api/transactions/{id}` | – | ✓ (qualquer) | ✓ (se tocar conta própria) |
 | `GET /api/clients/me` (o próprio cadastro) | – | ✓ | ✓ |
-| `POST /api/clients`, `/suspend`, `/reactivate`, `GET /api/clients` (cadastro e status) | – | ✓ | – |
+| `POST /api/clients`, `/suspend`, `/reactivate`, `/limits`, `GET /api/clients` (cadastro, status e limites) | – | ✓ | – |
 | `POST /api/accounts/{id}/holder` (definir titular) | – | ✓ | – |
 | `POST /api/accounts/{id}/credit`, `/debit` (movimenta saldo; o débito só alcança o disponível) | – | ✓ | – |
 | `POST /api/trading/orders`, `/replace`, `/cancel` | – | ✓ | – |
@@ -205,6 +205,8 @@ O papel M2M faz apenas o que o load generator precisa — abrir conta e transfer
 **Titular da conta.** O titular é o `sub` do Keycloak — a identidade que responde pela conta, gravada no journal junto com a abertura. O operador pode abrir uma conta em nome de alguém (`{"initialBalance": 100.00, "holder": "<sub>"}`) ou dar titular a uma conta que ainda não tem (`POST /api/accounts/{id}/holder`), mas o vínculo **é definido uma vez**: não existe troca de titularidade por reatribuição (a resposta é `409`). Quem tem o papel `lastro-holder` só enxerga e só tira dinheiro das contas que tem; conta sem titular é alcançável apenas pelo operador e pelo M2M. Movimentar saldo de terceiro (crédito/débito), operar o mercado e definir titularidade continuam sendo atos de operador — é o balcão, e é o que a trilha de auditoria cobre.
 
 **Cliente e suspensão.** O cliente é o cadastro em volta do `sub` do titular — nome, status e, depois, limites —, e não muda a conta: o vínculo continua sendo o `sub`, então o journal de 0.1 a 0.6 continua legível e nenhuma conta migra. Suspender não apaga nada nem confisca: o cliente suspenso não abre ordem nem tira dinheiro por transferência, mas continua recebendo crédito e enxergando o que é dele, e o motivo aparece em `GET /api/clients/me`. Titular sem cadastro de cliente opera como antes — o passado não é reescrito.
+
+**Limites.** O teto por ordem é o caixa que uma compra pode comprometer: acima dele a ordem é recusada com `403` antes de existir, e a venda não passa por ele, porque vender não compromete caixa (não há descoberto). O teto diário soma o que o cliente já tirou por transferência no dia do sistema — o mesmo dia da janela de negociação —, e a transferência que estouraria o dia é recusada antes de o dinheiro se mover; receber não conta. Os dois são nulos por padrão (sem limite), cada definição fica no journal (`ClientLimitsSet`, e o replay fica com a última) e só valem para quem tem cadastro de cliente.
 
 ```bash
 docker compose up -d keycloak   # Keycloak em http://localhost:8090 (admin/admin)
@@ -309,6 +311,7 @@ Todas as rotas abaixo exigem `Authorization: Bearer <token>` com o papel adequad
 - `GET /api/clients/{id}` - Buscar cliente (ato de operador)
 - `POST /api/clients/{id}/suspend` - Suspender o cliente (body opcional: `{"reason": "documentacao vencida"}`). Suspenso não abre ordem nem tira dinheiro por transferência; receber crédito continua valendo. Suspender duas vezes responde `200` e grava um fato só.
 - `POST /api/clients/{id}/reactivate` - Reativar o cliente
+- `PUT /api/clients/{id}/limits` - Definir os limites do cliente (body: `{"orderNotional": 1000.00, "dailyTransfer": 500.00}`; campo nulo remove aquele limite). Ato de operador, e cada definição vira fato no journal.
 
 ### Contas
 

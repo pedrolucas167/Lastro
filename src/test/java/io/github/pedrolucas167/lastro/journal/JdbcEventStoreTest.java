@@ -91,14 +91,18 @@ class JdbcEventStoreTest {
         eventStore.append(new ClientSuspended("cli-1", "documentacao vencida", OPERATOR,
             at.plusSeconds(60)));
         eventStore.append(new ClientReactivated("cli-1", OPERATOR, at.plusSeconds(120)));
+        eventStore.append(new ClientLimitsSet("cli-1", new BigDecimal("1000.00"),
+            new BigDecimal("500.00"), OPERATOR, at.plusSeconds(180)));
 
         List<DomainEvent> events = eventStore.readAll();
 
-        assertEquals(3, events.size());
+        assertEquals(4, events.size());
         assertEquals(new ClientRegistered("cli-1", "titular-1", "Maria", OPERATOR, at), events.get(0));
         assertEquals(new ClientSuspended("cli-1", "documentacao vencida", OPERATOR,
             at.plusSeconds(60)), events.get(1));
         assertEquals(new ClientReactivated("cli-1", OPERATOR, at.plusSeconds(120)), events.get(2));
+        assertEquals(new ClientLimitsSet("cli-1", new BigDecimal("1000.00"),
+            new BigDecimal("500.00"), OPERATOR, at.plusSeconds(180)), events.get(3));
     }
 
     @Test
