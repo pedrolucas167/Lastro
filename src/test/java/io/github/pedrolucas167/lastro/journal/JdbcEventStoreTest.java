@@ -85,6 +85,23 @@ class JdbcEventStoreTest {
     }
 
     @Test
+    void roundTripsClientEvents() {
+        Instant at = Instant.parse("2026-01-01T10:00:00Z");
+        eventStore.append(new ClientRegistered("cli-1", "titular-1", "Maria", OPERATOR, at));
+        eventStore.append(new ClientSuspended("cli-1", "documentacao vencida", OPERATOR,
+            at.plusSeconds(60)));
+        eventStore.append(new ClientReactivated("cli-1", OPERATOR, at.plusSeconds(120)));
+
+        List<DomainEvent> events = eventStore.readAll();
+
+        assertEquals(3, events.size());
+        assertEquals(new ClientRegistered("cli-1", "titular-1", "Maria", OPERATOR, at), events.get(0));
+        assertEquals(new ClientSuspended("cli-1", "documentacao vencida", OPERATOR,
+            at.plusSeconds(60)), events.get(1));
+        assertEquals(new ClientReactivated("cli-1", OPERATOR, at.plusSeconds(120)), events.get(2));
+    }
+
+    @Test
     void roundTripsTransferCompletedWithTheIdempotencyKey() {
         Instant at = Instant.parse("2026-01-01T10:00:00Z");
         eventStore.append(new TransferCompleted("tx-1", "acc-1", "acc-2", new BigDecimal("50.00"), "chave-1",

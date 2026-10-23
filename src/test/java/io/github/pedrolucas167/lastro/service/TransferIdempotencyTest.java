@@ -42,7 +42,7 @@ class TransferIdempotencyTest {
     void setUp() {
         eventStore = new InMemoryEventStore();
         accountService = new AccountService(eventStore, new LedgerService());
-        transactionService = new TransactionService(accountService);
+        transactionService = new TransactionService(accountService, new ClientService(eventStore));
         from = accountService.createAccount(BACK_OFFICE, new BigDecimal("1000.00"));
         to = accountService.createAccount(BACK_OFFICE, new BigDecimal("500.00"));
     }
@@ -87,7 +87,7 @@ class TransferIdempotencyTest {
         Transaction accepted = transfer("chave-1");
 
         // Reinicio: transacoes novas reconstruidas do mesmo journal.
-        TransactionService restarted = new TransactionService(accountService);
+        TransactionService restarted = new TransactionService(accountService, new ClientService(eventStore));
         restarted.rebuild(eventStore.readAll());
 
         Transaction resent = restarted.transfer(BACK_OFFICE, from.getId(), to.getId(),

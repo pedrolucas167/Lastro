@@ -5,7 +5,7 @@ import io.github.pedrolucas167.lastro.domain.Actor;
 import java.time.Instant;
 
 /** Fato de dominio imutavel registrado no journal append-only. */
-public sealed interface DomainEvent permits MoneyEvent, TradingEvent, MarketEvent {
+public sealed interface DomainEvent permits MoneyEvent, TradingEvent, MarketEvent, ClientEvent {
 
     String type();
 

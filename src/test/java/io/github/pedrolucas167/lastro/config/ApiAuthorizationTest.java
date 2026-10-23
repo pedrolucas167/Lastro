@@ -135,6 +135,9 @@ class ApiAuthorizationTest {
 
         mockMvc.perform(get("/api/market/halted").header("Authorization", OPERATOR))
             .andExpect(status().isOk());
+
+        mockMvc.perform(get("/api/clients").header("Authorization", OPERATOR))
+            .andExpect(status().isOk());
     }
 
     @Test
@@ -150,6 +153,10 @@ class ApiAuthorizationTest {
         mockMvc.perform(get("/api/accounts/mine").header("Authorization", HOLDER))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$[0].holder").value("cliente-1"));
+
+        // Sem cadastro de cliente, /me responde 404 -- e nao 403: o titular alcanca a rota.
+        mockMvc.perform(get("/api/clients/me").header("Authorization", HOLDER))
+            .andExpect(status().isNotFound());
     }
 
     @Test
@@ -177,6 +184,15 @@ class ApiAuthorizationTest {
             .andExpect(status().isForbidden());
 
         mockMvc.perform(post("/api/loadtest/run").header("Authorization", HOLDER))
+            .andExpect(status().isForbidden());
+
+        mockMvc.perform(post("/api/clients")
+                .header("Authorization", HOLDER)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"subject\": \"cliente-1\", \"name\": \"Cliente\"}"))
+            .andExpect(status().isForbidden());
+
+        mockMvc.perform(get("/api/clients").header("Authorization", HOLDER))
             .andExpect(status().isForbidden());
     }
 

@@ -5,6 +5,7 @@ import io.github.pedrolucas167.lastro.domain.Transaction;
 import io.github.pedrolucas167.lastro.domain.TransactionStatus;
 import io.github.pedrolucas167.lastro.domain.TransactionType;
 import io.github.pedrolucas167.lastro.exception.AccountAccessDeniedException;
+import io.github.pedrolucas167.lastro.exception.ClientSuspendedException;
 import io.github.pedrolucas167.lastro.exception.TransactionFailedException;
 import io.github.pedrolucas167.lastro.exception.TransferIdempotencyKeyReusedException;
 import io.github.pedrolucas167.lastro.journal.DomainEvent;
@@ -25,11 +26,13 @@ import java.util.concurrent.ConcurrentHashMap;
 public class TransactionService implements JournalRebuildable {
     private static final Logger logger = LoggerFactory.getLogger(TransactionService.class);
     private final AccountService accountService;
+    private final ClientService clientService;
     private final Map<String, Transaction> transactions = new ConcurrentHashMap<>();
     private final Map<String, Transaction> transactionsByIdempotencyKey = new ConcurrentHashMap<>();
 
-    public TransactionService(AccountService accountService) {
+    public TransactionService(AccountService accountService, ClientService clientService) {
         this.accountService = accountService;
+        this.clientService = clientService;
     }
 
     public Transaction transfer(Actor actor, String fromAccountId, String toAccountId, BigDecimal amount) {
@@ -75,6 +78,8 @@ public class TransactionService implements JournalRebuildable {
             transactionId, fromAccountId, toAccountId, amount);
 
         try {
+            // Cliente suspenso nao tira dinheiro da conta; o que entra, entra.
+            clientService.ensureMayOperate(accountService.getAccount(fromAccountId).getHolder());
             // O dinheiro sai pelo mesmo caminho de todo movimento: a conta, o journal e o livro.
             boolean moved = accountService.transfer(new TransferCompleted(transactionId, fromAccountId,
                 toAccountId, amount, idempotencyKey, actor, Instant.now()));
@@ -85,7 +90,7 @@ public class TransactionService implements JournalRebuildable {
                 transaction.setStatus(TransactionStatus.FAILED);
                 logger.warn("Transfer {} failed: insufficient funds", transactionId);
             }
-        } catch (AccountAccessDeniedException e) {
+        } catch (AccountAccessDeniedException | ClientSuspendedException e) {
             // Autorizacao nao e falha da transferencia: negar acesso e 403, nao 400.
             throw e;
         } catch (Exception e) {

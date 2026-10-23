@@ -35,7 +35,7 @@ class TransactionServiceTest {
     void setUp() {
         eventStore = new InMemoryEventStore();
         accountService = new AccountService(eventStore, new LedgerService());
-        transactionService = new TransactionService(accountService);
+        transactionService = new TransactionService(accountService, new ClientService(eventStore));
         
         fromAccount = accountService.createAccount(BACK_OFFICE, new BigDecimal("1000.00"));
         toAccount = accountService.createAccount(BACK_OFFICE, new BigDecimal("500.00"));
