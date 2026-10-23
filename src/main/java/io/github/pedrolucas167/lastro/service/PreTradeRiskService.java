@@ -39,12 +39,14 @@ public class PreTradeRiskService {
     private final AccountService accountService;
     private final PositionService positionService;
     private final PriceBandProperties priceBand;
+    private final ClientService clientService;
 
     public PreTradeRiskService(AccountService accountService, PositionService positionService,
-                               PriceBandProperties priceBand) {
+                               PriceBandProperties priceBand, ClientService clientService) {
         this.accountService = accountService;
         this.positionService = positionService;
         this.priceBand = priceBand;
+        this.clientService = clientService;
     }
 
     /** O que o amend move: o lastro de antes, o que ele passaria a pedir e o que foi bloqueado a mais. */
@@ -57,6 +59,7 @@ public class PreTradeRiskService {
      */
     public BigDecimal reserveForNewOrder(String symbol, OrderSide side, OrderType type,
                                          BigDecimal price, int quantity, String accountId) {
+        ensureClientMayOperate(accountId);
         if (side == OrderSide.SELL) {
             holdShares(accountId, symbol, BigDecimal.valueOf(quantity));
             return BigDecimal.valueOf(quantity);
@@ -93,6 +96,7 @@ public class PreTradeRiskService {
 
     /** Bloqueia o que o amend passa a pedir a mais. Recusa antes do engine quando a conta nao cobre. */
     public AmendHold reserveForAmend(Order order, BigDecimal price, int quantity) {
+        ensureClientMayOperate(order.getAccountId());
         BigDecimal before = commitmentOf(order, order.getPrice(), order.getRemainingQuantity());
         BigDecimal wanted = commitmentOf(order, price, order.remainingAfterAmend(quantity));
         BigDecimal reserved = wanted.subtract(before).max(BigDecimal.ZERO);
@@ -155,6 +159,11 @@ public class PreTradeRiskService {
         cashByAccount.forEach(accountService::rebuildHeld);
         sharesByPosition.forEach((position, quantity) ->
             positionService.rebuildHeld(position.accountId(), position.symbol(), quantity));
+    }
+
+    /** Suspender so vale para quem tem cadastro de cliente; o replay nunca bloqueia por isso. */
+    private void ensureClientMayOperate(String accountId) {
+        clientService.ensureMayOperate(accountService.getAccount(accountId).getHolder());
     }
 
     /** O lastro que a ordem garante: caixa a gastar (compra) ou acoes a vender (venda). */

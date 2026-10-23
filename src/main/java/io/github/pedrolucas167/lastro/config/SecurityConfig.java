@@ -57,6 +57,9 @@ public class SecurityConfig {
                     .hasAnyRole(Actor.HOLDER, Actor.OPERATOR)
                 .requestMatchers(HttpMethod.POST, "/api/accounts/*/holder")
                     .hasRole(Actor.OPERATOR)
+                // O cadastro do cliente e do operador; o titular le o proprio em /me.
+                .requestMatchers(HttpMethod.GET, "/api/clients/me")
+                    .hasAnyRole(Actor.HOLDER, Actor.OPERATOR)
                 .requestMatchers("/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html")
                     .authenticated()
                 .anyRequest().hasRole(Actor.OPERATOR))

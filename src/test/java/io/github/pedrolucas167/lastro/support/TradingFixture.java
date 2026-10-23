@@ -8,6 +8,7 @@ import io.github.pedrolucas167.lastro.journal.JournalReplay;
 import io.github.pedrolucas167.lastro.ledger.LedgerService;
 import io.github.pedrolucas167.lastro.metrics.MetricsCollector;
 import io.github.pedrolucas167.lastro.service.AccountService;
+import io.github.pedrolucas167.lastro.service.ClientService;
 import io.github.pedrolucas167.lastro.service.CustodyService;
 import io.github.pedrolucas167.lastro.service.MarketHaltService;
 import io.github.pedrolucas167.lastro.service.OrderService;
@@ -35,6 +36,7 @@ public final class TradingFixture {
     public final MetricsCollector metrics = new MetricsCollector();
     public final PositionService positions = new PositionService();
     public final LedgerService ledger = new LedgerService();
+    public final ClientService clients;
     public final OrderService orders;
     public final AccountService accounts;
     public final RegulatoryValidationService validation;
@@ -50,10 +52,11 @@ public final class TradingFixture {
         this.eventStore = eventStore;
         this.priceBand = priceBand;
         this.orders = new OrderService(eventStore);
+        this.clients = new ClientService(eventStore);
         this.accounts = new AccountService(eventStore, ledger);
         this.validation = new RegulatoryValidationService(new MarketHaltService(eventStore), priceBand,
             false, true, "00:00", "23:59");
-        this.risk = new PreTradeRiskService(accounts, positions, priceBand);
+        this.risk = new PreTradeRiskService(accounts, positions, priceBand, clients);
         this.custody = new CustodyService(accounts, positions, validation, eventStore);
         this.trading = new TradingService(engine, orders, positions, accounts, metrics, validation,
             risk, eventStore);
@@ -69,7 +72,7 @@ public final class TradingFixture {
     /** Reinicio: grafo novo sobre o mesmo journal, reconstruido na ordem do startup. */
     public TradingFixture restart() {
         TradingFixture fresh = new TradingFixture(eventStore, priceBand);
-        new JournalReplay(eventStore, List.of(fresh.accounts, fresh.trading)).run(null);
+        new JournalReplay(eventStore, List.of(fresh.clients, fresh.accounts, fresh.trading)).run(null);
         return fresh;
     }
 
