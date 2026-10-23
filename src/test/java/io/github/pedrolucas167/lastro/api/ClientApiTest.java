@@ -31,6 +31,7 @@ import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.BDDMockito.given;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -117,6 +118,55 @@ class ClientApiTest {
     }
 
     @Test
+    @DisplayName("O limite por ordem recusa a compra acima do teto e libera quando o limite sai")
+    void orderLimitIsEnforcedOnBuys() throws Exception {
+        String clientId = register(subject, "Maria");
+        Account account = accountService.createAccount(BACK_OFFICE, new BigDecimal("1000.00"), subject);
+
+        setLimits(clientId, "{\"orderNotional\": 100.00}");
+
+        // 30 x 10 = 300 acima do teto de 100.
+        submitBuy(account.getId())
+            .andExpect(status().isForbidden())
+            .andExpect(jsonPath("$.message").value(containsString("above the client limit")));
+
+        submitBuy(account.getId(), "30.00", 3).andExpect(status().isOk());
+
+        mockMvc.perform(get("/api/clients/me").header("Authorization", HOLDER))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.limits.orderNotional").value(100.00));
+
+        // Tirar o limite (campo nulo) devolve a operacao.
+        setLimits(clientId, "{\"orderNotional\": null}");
+        submitBuy(account.getId()).andExpect(status().isOk());
+    }
+
+    @Test
+    @DisplayName("O limite diario soma o que ja saiu hoje por transferencia")
+    void dailyTransferLimitSumsTheDay() throws Exception {
+        String clientId = register(subject, "Maria");
+        Account account = accountService.createAccount(BACK_OFFICE, new BigDecimal("1000.00"), subject);
+        Account first = accountService.createAccount(BACK_OFFICE, new BigDecimal("0.00"));
+        Account second = accountService.createAccount(BACK_OFFICE, new BigDecimal("0.00"));
+
+        setLimits(clientId, "{\"dailyTransfer\": 50.00}");
+
+        transfer(account.getId(), first.getId(), "40.00").andExpect(status().isOk());
+
+        // 40 + 20 passaria de 50: recusado, e o dinheiro nao se move.
+        transfer(account.getId(), second.getId(), "20.00")
+            .andExpect(status().isForbidden())
+            .andExpect(jsonPath("$.message").value(containsString("above the client limit")));
+        assertEquals(0, new BigDecimal("0.00")
+            .compareTo(accountService.getAccount(second.getId()).getBalance()));
+
+        // 40 + 10 cabe exatamente no teto.
+        transfer(account.getId(), second.getId(), "10.00").andExpect(status().isOk());
+        assertEquals(0, new BigDecimal("10.00")
+            .compareTo(accountService.getAccount(second.getId()).getBalance()));
+    }
+
+    @Test
     @DisplayName("Cliente suspenso nao abre ordem, nao transfere, mas continua recebendo credito")
     void suspensionBlocksOrdersAndOutgoingMoneyOnly() throws Exception {
         String clientId = register(subject, "Maria");
@@ -188,20 +238,38 @@ class ClientApiTest {
             .andExpect(jsonPath("$.suspensionReason").value(reason));
     }
 
+    private void setLimits(String clientId, String body) throws Exception {
+        mockMvc.perform(put("/api/clients/" + clientId + "/limits")
+                .header("Authorization", OPERATOR)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(body))
+            .andExpect(status().isOk());
+    }
+
     private ResultActions submitBuy(String accountId) throws Exception {
+        return submitBuy(accountId, "30.00", 10);
+    }
+
+    private ResultActions submitBuy(String accountId, String price, int quantity) throws Exception {
         return mockMvc.perform(post("/api/trading/orders")
             .header("Authorization", OPERATOR)
             .contentType(MediaType.APPLICATION_JSON)
-            .content("{\"symbol\": \"CLI3\", \"side\": \"BUY\", \"type\": \"LIMIT\", \"price\": 30.00, "
-                + "\"quantity\": 10, \"accountId\": \"" + accountId + "\"}"));
+            .content("{\"symbol\": \"CLI3\", \"side\": \"BUY\", \"type\": \"LIMIT\", "
+                + "\"price\": %s, \"quantity\": %d, \"accountId\": \"%s\"}"
+                .formatted(price, quantity, accountId)));
     }
 
     private ResultActions transfer(String fromAccountId, String toAccountId) throws Exception {
+        return transfer(fromAccountId, toAccountId, "10.00");
+    }
+
+    private ResultActions transfer(String fromAccountId, String toAccountId, String amount)
+            throws Exception {
         return mockMvc.perform(post("/api/transactions/transfer")
             .header("Authorization", OPERATOR)
             .contentType(MediaType.APPLICATION_JSON)
-            .content("{\"fromAccountId\": \"%s\", \"toAccountId\": \"%s\", \"amount\": 10.00}"
-                .formatted(fromAccountId, toAccountId)));
+            .content("{\"fromAccountId\": \"%s\", \"toAccountId\": \"%s\", \"amount\": %s}"
+                .formatted(fromAccountId, toAccountId, amount)));
     }
 
     private static String body(String subject, String name) {

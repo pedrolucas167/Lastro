@@ -2,11 +2,14 @@ package io.github.pedrolucas167.lastro.service;
 
 import io.github.pedrolucas167.lastro.domain.Actor;
 import io.github.pedrolucas167.lastro.domain.Client;
+import io.github.pedrolucas167.lastro.domain.ClientLimits;
 import io.github.pedrolucas167.lastro.domain.ClientStatus;
 import io.github.pedrolucas167.lastro.exception.ClientAccessDeniedException;
 import io.github.pedrolucas167.lastro.exception.ClientAlreadyRegisteredException;
+import io.github.pedrolucas167.lastro.exception.ClientLimitExceededException;
 import io.github.pedrolucas167.lastro.exception.ClientNotFoundException;
 import io.github.pedrolucas167.lastro.exception.ClientSuspendedException;
+import io.github.pedrolucas167.lastro.journal.ClientLimitsSet;
 import io.github.pedrolucas167.lastro.journal.ClientReactivated;
 import io.github.pedrolucas167.lastro.journal.ClientRegistered;
 import io.github.pedrolucas167.lastro.journal.ClientSuspended;
@@ -17,6 +20,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
+import java.math.BigDecimal;
 import java.util.List;
 import java.util.Set;
 
@@ -171,5 +175,76 @@ class ClientServiceTest {
 
         assertEquals(List.of("Ana", "Bruno"),
             clients.all().stream().map(Client::getName).toList());
+    }
+
+    @Test
+    @DisplayName("Limites viram fato no journal e o replay fica com a ultima definicao")
+    void limitsAreJournaledAndReplayed() {
+        Client client = clients.register(BACK_OFFICE, SUBJECT, "Maria");
+
+        clients.setLimits(BACK_OFFICE, client.getId(),
+            new ClientLimits(new BigDecimal("1000.00"), new BigDecimal("500.00")));
+        clients.setLimits(BACK_OFFICE, client.getId(),
+            new ClientLimits(new BigDecimal("2000.00"), null));
+
+        assertEquals(new ClientLimits(new BigDecimal("2000.00"), null), client.getLimits());
+        assertEquals(3, eventStore.readAll().size());
+        assertInstanceOf(ClientLimitsSet.class, eventStore.readAll().getLast());
+
+        ClientService replayed = new ClientService(eventStore);
+        replayed.rebuild(eventStore.readAll());
+        assertEquals(new ClientLimits(new BigDecimal("2000.00"), null),
+            replayed.bySubject(SUBJECT).orElseThrow().getLimits());
+    }
+
+    @Test
+    @DisplayName("Mandar os mesmos limites nao e fato novo, e titular nao define limite")
+    void limitsAreOperatorOnlyAndIdempotent() {
+        Client client = clients.register(BACK_OFFICE, SUBJECT, "Maria");
+        ClientLimits limits = new ClientLimits(new BigDecimal("100.00"), null);
+
+        assertThrows(ClientAccessDeniedException.class,
+            () -> clients.setLimits(TITULAR, client.getId(), limits));
+
+        clients.setLimits(BACK_OFFICE, client.getId(), limits);
+        clients.setLimits(BACK_OFFICE, client.getId(), limits);
+
+        assertEquals(2, eventStore.readAll().size());
+    }
+
+    @Test
+    @DisplayName("O teto por ordem aceita no limite e recusa acima")
+    void orderLimitRefusesAboveTheCeiling() {
+        Client client = clients.register(BACK_OFFICE, SUBJECT, "Maria");
+        clients.setLimits(BACK_OFFICE, client.getId(),
+            new ClientLimits(new BigDecimal("1000.00"), null));
+
+        clients.ensureOrderWithinLimit(SUBJECT, new BigDecimal("1000.00"));
+        assertThrows(ClientLimitExceededException.class,
+            () -> clients.ensureOrderWithinLimit(SUBJECT, new BigDecimal("1000.01")));
+    }
+
+    @Test
+    @DisplayName("O teto diario soma o que ja saiu hoje")
+    void dailyLimitSumsWhatAlreadyLeft() {
+        Client client = clients.register(BACK_OFFICE, SUBJECT, "Maria");
+        clients.setLimits(BACK_OFFICE, client.getId(),
+            new ClientLimits(null, new BigDecimal("500.00")));
+
+        clients.ensureTransferWithinDailyLimit(SUBJECT, new BigDecimal("400.00"),
+            new BigDecimal("100.00"));
+        assertThrows(ClientLimitExceededException.class,
+            () -> clients.ensureTransferWithinDailyLimit(SUBJECT, new BigDecimal("400.00"),
+                new BigDecimal("150.00")));
+    }
+
+    @Test
+    @DisplayName("Sem cadastro de cliente nao ha limite a aplicar")
+    void noClientMeansNoLimit() {
+        clients.ensureOrderWithinLimit("sem-cadastro", new BigDecimal("999999.00"));
+        clients.ensureTransferWithinDailyLimit("sem-cadastro", new BigDecimal("999999.00"),
+            new BigDecimal("999999.00"));
+
+        assertEquals(ClientLimits.NONE, clients.limitsOf("sem-cadastro"));
     }
 }

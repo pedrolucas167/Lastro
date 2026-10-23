@@ -5,5 +5,5 @@ package io.github.pedrolucas167.lastro.journal;
  * cadastro e o status tambem sao fatos, e o replay os reconstroi.
  */
 public sealed interface ClientEvent extends DomainEvent
-        permits ClientRegistered, ClientSuspended, ClientReactivated {
+        permits ClientRegistered, ClientSuspended, ClientReactivated, ClientLimitsSet {
 }

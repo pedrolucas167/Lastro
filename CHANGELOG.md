@@ -4,7 +4,7 @@ Todas as mudanças relevantes deste projeto são documentadas aqui.
 
 O formato segue [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/) e o projeto adota [Versionamento Semântico](https://semver.org/lang/pt-BR/).
 
-> ⚠️ **Experimental.** O núcleo de matching é correto sob concorrência e durável via journal + replay. A API exige autenticação (JWT do Keycloak), autoriza por papel na rota e por titular na conta, e cada evento do journal grava o ator (o `sub` e os papéis daquele momento), mas não há limites por titular nem conectividade de mercado (feed/FIX), e a liquidação é D+0 no próprio livro, sem câmara ou netting. Não use em produção.
+> ⚠️ **Experimental.** O núcleo de matching é correto sob concorrência e durável via journal + replay. A API exige autenticação (JWT do Keycloak), autoriza por papel na rota e por titular na conta, e cada evento do journal grava o ator (o `sub` e os papéis daquele momento), mas não há verificação de identidade (KYC/PLD) nem conectividade de mercado (feed/FIX), e a liquidação é D+0 no próprio livro, sem câmara ou netting. Não use em produção.
 
 ## [Unreleased]
 
@@ -12,6 +12,7 @@ O formato segue [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/) e o 
 
 - **Cliente como cadastro do titular.** `POST /api/clients` registra o cliente de um titular (o `sub` do Keycloak) com nome e status, e o fato vai para o journal como os de dinheiro: `ClientRegistered`, `ClientSuspended` e `ClientReactivated` são eventos, e o replay devolve o cadastro com o status que ele tinha. O cliente não muda a conta — o vínculo continua sendo o `sub` do titular —, então o journal de 0.1 a 0.6 continua legível e nenhuma conta migra.
 - **Suspensão vale de verdade.** Cliente suspenso não abre ordem (`403` no pré-trade) nem tira dinheiro por transferência; o que entra continua entrando — crédito e recebimento não são bloqueados, porque suspender não é confiscar. `GET /api/clients/me` devolve o próprio cadastro, com o motivo da suspensão, e o operador lista, consulta, suspende e reativa. Titular sem cadastro de cliente continua operando como antes.
+- **Limites do cliente.** `PUT /api/clients/{id}/limits` define o teto por ordem e o teto diário de saída por transferência; cada definição é um fato no journal (`ClientLimitsSet`) e o replay fica com a última, então o limite também sobrevive ao reinício. A compra acima do teto é recusada no pré-trade (`403`) sem virar ordem — a venda não passa pelo teto de caixa, porque não há descoberto —, e a transferência que estouraria o dia é recusada antes de o dinheiro sair. Campo nulo remove o limite, e cliente sem cadastro não tem limite.
 
 ## [0.6.0] - 2026-10-21
 

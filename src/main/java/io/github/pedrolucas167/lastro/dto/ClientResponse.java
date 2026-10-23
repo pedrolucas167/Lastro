@@ -16,10 +16,12 @@ public class ClientResponse {
     private String status;
     /** Por que esta suspenso; nulo quando ativo. */
     private String suspensionReason;
+    private ClientLimitsResponse limits;
     private Instant registeredAt;
 
     public static ClientResponse of(Client client) {
         return new ClientResponse(client.getId(), client.getSubject(), client.getName(),
-            client.getStatus().name(), client.getSuspensionReason(), client.getRegisteredAt());
+            client.getStatus().name(), client.getSuspensionReason(),
+            ClientLimitsResponse.of(client.getLimits()), client.getRegisteredAt());
     }
 }

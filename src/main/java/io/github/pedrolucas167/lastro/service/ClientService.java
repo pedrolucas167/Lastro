@@ -2,10 +2,13 @@ package io.github.pedrolucas167.lastro.service;
 
 import io.github.pedrolucas167.lastro.domain.Actor;
 import io.github.pedrolucas167.lastro.domain.Client;
+import io.github.pedrolucas167.lastro.domain.ClientLimits;
 import io.github.pedrolucas167.lastro.exception.ClientAccessDeniedException;
 import io.github.pedrolucas167.lastro.exception.ClientAlreadyRegisteredException;
+import io.github.pedrolucas167.lastro.exception.ClientLimitExceededException;
 import io.github.pedrolucas167.lastro.exception.ClientNotFoundException;
 import io.github.pedrolucas167.lastro.exception.ClientSuspendedException;
+import io.github.pedrolucas167.lastro.journal.ClientLimitsSet;
 import io.github.pedrolucas167.lastro.journal.ClientReactivated;
 import io.github.pedrolucas167.lastro.journal.ClientRegistered;
 import io.github.pedrolucas167.lastro.journal.ClientSuspended;
@@ -18,6 +21,7 @@ import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Service;
 
 import java.time.Instant;
+import java.math.BigDecimal;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
@@ -120,6 +124,49 @@ public class ClientService implements JournalRebuildable {
     }
 
     /**
+     * Define os limites do cliente. Mandar os mesmos valores nao e fato novo -- o journal guarda a
+     * definicao que mudou o estado, nao cada requisicao.
+     */
+    public Client setLimits(Actor actor, String clientId, ClientLimits limits) {
+        requireOperator(actor);
+        Client client = get(clientId);
+        if (client.getLimits().equals(limits)) {
+            return client;
+        }
+        eventStore.append(new ClientLimitsSet(clientId, limits.orderNotional(),
+            limits.dailyTransfer(), actor, Instant.now()));
+        client.setLimits(limits);
+        logger.info("Set limits of client {} to {}", clientId, limits);
+        return client;
+    }
+
+    /** Os limites do titular; sem cadastro de cliente nao ha limite a aplicar. */
+    public ClientLimits limitsOf(String subject) {
+        return bySubject(subject).map(Client::getLimits).orElse(ClientLimits.NONE);
+    }
+
+    /** O teto por ordem vale para o caixa que a ordem de compra pode comprometer. */
+    public void ensureOrderWithinLimit(String subject, BigDecimal notional) {
+        BigDecimal limit = limitsOf(subject).orderNotional();
+        if (limit != null && notional.compareTo(limit) > 0) {
+            throw new ClientLimitExceededException(String.format(
+                "Order notional %s is above the client limit of %s", notional, limit));
+        }
+    }
+
+    /** O teto diario vale para o que o cliente ja tirou hoje mais o que esta tentando tirar. */
+    public void ensureTransferWithinDailyLimit(String subject, BigDecimal transferredToday,
+                                               BigDecimal amount) {
+        BigDecimal limit = limitsOf(subject).dailyTransfer();
+        BigDecimal total = transferredToday.add(amount);
+        if (limit != null && total.compareTo(limit) > 0) {
+            throw new ClientLimitExceededException(String.format(
+                "Transfer of %s would take the day's transfers to %s, above the client limit of %s",
+                amount, total, limit));
+        }
+    }
+
+    /**
      * Cliente suspenso nao abre ordem nem tira dinheiro; o que entra, entra. Sem cadastro de
      * cliente nao ha o que barrar.
      */
@@ -149,6 +196,15 @@ public class ClientService implements JournalRebuildable {
                         continue;
                     }
                     client.suspend(e.reason());
+                }
+                case ClientLimitsSet e -> {
+                    Client client = clientsById.get(e.clientId());
+                    if (client == null) {
+                        logger.warn("Client {} had limits set before being registered: skipping",
+                            e.clientId());
+                        continue;
+                    }
+                    client.setLimits(new ClientLimits(e.orderNotional(), e.dailyTransfer()));
                 }
                 case ClientReactivated e -> {
                     Client client = clientsById.get(e.clientId());

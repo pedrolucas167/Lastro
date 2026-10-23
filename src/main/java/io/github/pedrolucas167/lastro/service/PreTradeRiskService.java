@@ -59,12 +59,14 @@ public class PreTradeRiskService {
      */
     public BigDecimal reserveForNewOrder(String symbol, OrderSide side, OrderType type,
                                          BigDecimal price, int quantity, String accountId) {
-        ensureClientMayOperate(accountId);
+        String holder = holderOf(accountId);
+        clientService.ensureMayOperate(holder);
         if (side == OrderSide.SELL) {
             holdShares(accountId, symbol, BigDecimal.valueOf(quantity));
             return BigDecimal.valueOf(quantity);
         }
         BigDecimal amount = unitPrice(symbol, type, price).multiply(BigDecimal.valueOf(quantity));
+        clientService.ensureOrderWithinLimit(holder, amount);
         holdCash(accountId, amount);
         return amount;
     }
@@ -96,9 +98,13 @@ public class PreTradeRiskService {
 
     /** Bloqueia o que o amend passa a pedir a mais. Recusa antes do engine quando a conta nao cobre. */
     public AmendHold reserveForAmend(Order order, BigDecimal price, int quantity) {
-        ensureClientMayOperate(order.getAccountId());
+        String holder = holderOf(order.getAccountId());
+        clientService.ensureMayOperate(holder);
         BigDecimal before = commitmentOf(order, order.getPrice(), order.getRemainingQuantity());
         BigDecimal wanted = commitmentOf(order, price, order.remainingAfterAmend(quantity));
+        if (order.getSide() == OrderSide.BUY) {
+            clientService.ensureOrderWithinLimit(holder, wanted);
+        }
         BigDecimal reserved = wanted.subtract(before).max(BigDecimal.ZERO);
         if (reserved.signum() > 0) {
             hold(order, reserved);
@@ -162,8 +168,8 @@ public class PreTradeRiskService {
     }
 
     /** Suspender so vale para quem tem cadastro de cliente; o replay nunca bloqueia por isso. */
-    private void ensureClientMayOperate(String accountId) {
-        clientService.ensureMayOperate(accountService.getAccount(accountId).getHolder());
+    private String holderOf(String accountId) {
+        return accountService.getAccount(accountId).getHolder();
     }
 
     /** O lastro que a ordem garante: caixa a gastar (compra) ou acoes a vender (venda). */
