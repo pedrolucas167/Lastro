@@ -1,0 +1,71 @@
+name: Security
+
+# Varredura de vulnerabilidade das dependencias (OWASP Dependency-Check). Fica fora do PR de
+# proposito: a base da NVD e grande e o download depende de rede, o que alongaria o feedback do dia
+# a dia. Roda toda semana e no botao, com o resultado tambem no code scanning (SARIF).
+on:
+  schedule:
+    - cron: '0 7 * * 1'
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: read
+  security-events: write
+
+concurrency:
+  group: security
+  cancel-in-progress: true
+
+jobs:
+  dependency-check:
+    runs-on: ubuntu-latest
+    # O primeiro download da base da NVD, sem chave, e o que domina o tempo.
+    timeout-minutes: 90
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up JDK 25
+        uses: actions/setup-java@v6
+        with:
+          java-version: '25'
+          distribution: temurin
+          cache: maven
+
+      # Reaproveita a base da NVD entre execucoes: sem isso todo scan baixa tudo de novo. A chave roda
+      # por semana para nao acumular uma copia por execucao no cache do repositorio.
+      - name: Current week
+        id: week
+        run: echo "week=$(date +%G-%V)" >> "$GITHUB_OUTPUT"
+
+      - name: Cache NVD data
+        uses: actions/cache@v6
+        with:
+          path: target/dependency-check-data
+          key: dependency-check-data-${{ steps.week.outputs.week }}
+          restore-keys: |
+            dependency-check-data-
+
+      - name: OWASP Dependency-Check
+        env:
+          # Sem o secret o scan roda no limite publico da NVD (mais lento), mas roda.
+          NVD_API_KEY: ${{ secrets.NVD_API_KEY }}
+        run: ./mvnw -B -ntp -Psecurity dependency-check:check
+
+      - name: Upload report
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: dependency-check-report
+          path: |
+            target/dependency-check-report.html
+            target/dependency-check-report.sarif
+          if-no-files-found: warn
+
+      - name: Upload SARIF
+        if: always() && hashFiles('target/dependency-check-report.sarif') != ''
+        uses: github/codeql-action/upload-sarif@v4
+        with:
+          sarif_file: target/dependency-check-report.sarif
+          category: dependency-check
