@@ -263,6 +263,20 @@ O Compose sobe o Postgres, aponta a aplicação para ele (`SPRING_DATASOURCE_*`)
 
 Para usar um Postgres próprio, defina `spring.datasource.url`, `spring.datasource.username` e `spring.datasource.password`.
 
+### Vulnerabilidades em dependências
+
+O scan é o [OWASP Dependency-Check](https://owasp.org/www-project-dependency-check/), atrás do profile `security`:
+
+```bash
+./mvnw -Psecurity dependency-check:check
+```
+
+Ele cruza as dependências com a base da NVD, **falha o build em CVSS ≥ 7** e escreve `target/dependency-check-report.html` e `target/dependency-check-report.sarif`. A chave da NVD é opcional e vem da variável de ambiente `NVD_API_KEY` — o profile a lê do ambiente, não de `-D`, para não vazar em log de debug; sem ela o download da base usa o limite público e demora bem mais. A chave gratuita é pedida em [nvd.nist.gov/developers/request-an-api-key](https://nvd.nist.gov/developers/request-an-api-key).
+
+No CI, o workflow `Security` roda toda segunda-feira e no botão (**Actions → Security → Run workflow**), publica o relatório como artefato e manda o SARIF para o code scanning. Ele fica fora do PR de propósito: a base da NVD é grande e depende de rede, e o feedback do dia a dia não deve esperar por ela.
+
+Um CVE só entra em [`dependency-check-suppressions.xml`](./dependency-check-suppressions.xml) depois de confirmado que não alcança este projeto, com o motivo e a data de revisão no `<notes>` — a política está no topo do arquivo.
+
 ### Executar Load Test
 
 ```bash

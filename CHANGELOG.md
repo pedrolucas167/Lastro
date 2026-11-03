@@ -8,6 +8,10 @@ O formato segue [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/) e o 
 
 ## [Unreleased]
 
+### Adicionado
+
+- **Varredura de vulnerabilidade das dependências.** O profile `security` roda o OWASP Dependency-Check (`./mvnw -Psecurity dependency-check:check`), cruza as dependências com a base da NVD e falha o build em CVSS ≥ 7, deixando relatório HTML e SARIF em `target/`. No CI, o workflow `Security` roda toda segunda-feira e sob demanda, publica o relatório como artefato e manda o SARIF para o code scanning — fora do PR, porque a base da NVD é grande e depende de rede. Um CVE só é suprimido com justificativa registrada em `dependency-check-suppressions.xml`, e a chave da NVD (`NVD_API_KEY`) é opcional: acelera o download e, sem ela, o scan usa o limite público.
+
 ## [0.7.0] - 2026-10-24
 
 Sétima versão pública: clientes e limites. O titular deixa de ser só o `sub` do token e ganha cadastro — nome, status e limites —, e a suspensão passa a valer de verdade: cliente suspenso não abre ordem nem tira dinheiro, mas continua recebendo e enxergando o que é dele. Os limites (teto por ordem e teto diário de transferência) vivem no journal como o resto do estado, então o replay devolve o cliente com o status e os limites que valiam. Nada migra: o vínculo com a conta continua sendo o `sub`, e o journal de 0.1 a 0.6 continua legível.
